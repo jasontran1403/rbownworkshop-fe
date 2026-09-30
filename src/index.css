@@ -1,0 +1,30 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Fallback keyframes nếu Tailwind không generate */
+@keyframes pulse-border {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(59, 130, 246, 0.65); }
+  50%      { box-shadow: 0 0 0 6px rgba(59, 130, 246, 0); }
+}
+
+@layer base {
+  * { box-sizing: border-box; }
+  html, body { overscroll-behavior: none; }
+  body { font-family: 'Inter', system-ui, sans-serif; }
+  ::-webkit-scrollbar { width: 5px; height: 5px; }
+  ::-webkit-scrollbar-track { @apply bg-gray-100; }
+  ::-webkit-scrollbar-thumb { @apply bg-gray-300 rounded-full; }
+}
+
+@layer components {
+  /* Badge chung */
+  .badge {
+    @apply inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium;
+  }
+  .badge-vip      { @apply bg-yellow-100 text-yellow-800 border border-yellow-300; }
+  .badge-supervip { @apply bg-orange-100 text-orange-700 border border-orange-300; }
+  .badge-success  { @apply bg-green-100 text-green-700; }
+  .badge-processing { @apply bg-blue-100 text-blue-700; }
+  .badge-muted    { @apply bg-gray-100 text-gray-700; }
+}
