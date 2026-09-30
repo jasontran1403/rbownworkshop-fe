@@ -125,10 +125,9 @@ export default function UploadPage() {
   const [uploadError, setUploadError] = useState('');
 
   // ============ UPLOAD TASK STATE ============
-  // task: { taskId, estimatedMillis, startedAt, totalRows, savedRows, status, errorMessage, currentProcessingNumber }
   const [task, setTask] = useState(null);
   const [progressModalOpen, setProgressModalOpen] = useState(false);
-  const [now, setNow] = useState(Date.now()); // ticker cho smooth progress
+  const [now, setNow] = useState(Date.now());
   const pollRef = useRef(null);
   const tickRef = useRef(null);
 
@@ -247,16 +246,22 @@ export default function UploadPage() {
   function askUpload() {
     if (!file) { setUploadError('Vui lòng chọn file'); return; }
     setUploadError('');
+    // KHÔNG đụng showUploadModal — Modal upload sẽ tự ẩn vì open = showUploadModal && !showUploadConfirm
     setShowUploadConfirm(true);
+  }
+
+  function cancelUploadConfirm() {
+    // Đóng warning → modal upload tự hiện lại (vì showUploadModal vẫn true)
+    setShowUploadConfirm(false);
   }
 
   async function doUpload() {
     setUploadError('');
     setShowUploadConfirm(false);
-    setShowUploadModal(false);
     try {
       const res = await startUpload(file);
-      // res: { taskId, estimatedMillis, totalRows }
+      // Upload đã bắt đầu → giờ mới ẩn modal upload và chuyển sang progress
+      setShowUploadModal(false);
       const startedAt = Date.now();
       setTask({
         taskId: res.taskId,
@@ -273,8 +278,8 @@ export default function UploadPage() {
       startPolling(res.taskId);
       startTicker();
     } catch (e) {
+      // Lỗi → showUploadConfirm đã false, showUploadModal còn true → modal upload tự hiện lại kèm lỗi
       setUploadError(e.message);
-      setShowUploadModal(true);
     }
   }
 
@@ -308,7 +313,6 @@ export default function UploadPage() {
           }
         }
       } catch (e) {
-        // silently retry — trừ khi 404 thì dừng
         if (String(e.message).includes('không tồn tại')) {
           clearInterval(pollRef.current); pollRef.current = null;
           clearInterval(tickRef.current); tickRef.current = null;
@@ -325,7 +329,6 @@ export default function UploadPage() {
   }
 
   // === Progress computation ===
-  // Lấy MAX(time-based, row-based) để mượt + chính xác, cap 95% khi đang chạy.
   function computeProgress() {
     if (!task) return 0;
     if (task.status === 'DONE') return 100;
@@ -341,7 +344,6 @@ export default function UploadPage() {
     if (!task) return 0;
     if (task.status !== 'RUNNING') return 0;
     const elapsed = now - task.startedAt;
-    // Nếu có savedRows > 0, ước lượng lại dựa trên tốc độ thực
     if (task.savedRows > 0 && elapsed > 0) {
       const actualPerRow = elapsed / task.savedRows;
       const remainingRows = Math.max(0, task.totalRows - task.savedRows);
@@ -642,7 +644,7 @@ export default function UploadPage() {
       </Modal>
 
       {/* Modal confirm upload */}
-      <Modal open={showUploadConfirm} onClose={() => setShowUploadConfirm(false)} title="Xác nhận upload" maxWidth="max-w-md">
+      <Modal open={showUploadConfirm} onClose={cancelUploadConfirm} title="Xác nhận upload" maxWidth="max-w-md">
         <div>
           <div className="flex gap-3 items-start">
             <div className="shrink-0 w-10 h-10 rounded-full bg-amber-100 text-amber-600 flex items-center justify-center">
@@ -655,7 +657,7 @@ export default function UploadPage() {
             </div>
           </div>
           <div className="mt-5 flex justify-end gap-2">
-            <button onClick={() => setShowUploadConfirm(false)} className="rounded-lg border border-gray-300 px-4 py-2 text-sm hover:bg-gray-50">Hủy</button>
+            <button onClick={cancelUploadConfirm} className="rounded-lg border border-gray-300 px-4 py-2 text-sm hover:bg-gray-50">Hủy</button>
             <button onClick={doUpload} className="rounded-lg bg-red-600 hover:bg-red-700 px-4 py-2 text-sm text-white">Xác nhận upload</button>
           </div>
         </div>
@@ -680,8 +682,12 @@ export default function UploadPage() {
         </div>
       </Modal>
 
-      {/* Modal upload */}
-      <Modal open={showUploadModal} onClose={() => setShowUploadModal(false)} title="Upload file Excel">
+      {/* Modal upload — TỰ ẨN KHI WARNING MỞ */}
+      <Modal
+        open={showUploadModal && !showUploadConfirm}
+        onClose={() => setShowUploadModal(false)}
+        title="Upload file Excel"
+      >
         <div className="mb-3">
           <a href={`${BASE_URL}/api/shop-orders/template`} className="inline-flex items-center gap-1 text-sm text-blue-600 hover:underline" download>
             📥 Tải file mẫu (xlsx)
@@ -702,7 +708,6 @@ export default function UploadPage() {
       <Modal
         open={progressModalOpen}
         onClose={() => {
-          // Cho phép đóng bằng backdrop khi task đã xong; đang chạy thì chỉ minimize
           if (isRunning) setProgressModalOpen(false);
           else dismissTask();
         }}
