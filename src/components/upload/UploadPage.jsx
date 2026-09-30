@@ -16,7 +16,8 @@ import {
 const BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:9879';
 const PAGE_SIZE = 100;
 const POLL_INTERVAL_MS = 800;
-const TICK_INTERVAL_MS = 100; // smooth progress animation tick
+const TICK_INTERVAL_MS = 100;
+const ANIM_MS = 350;
 
 const SHEET_TYPES = [
   { value: 'NORMAL', label: 'Thường' },
@@ -123,13 +124,21 @@ export default function UploadPage() {
 
   const [file, setFile] = useState(null);
   const [uploadError, setUploadError] = useState('');
+  const [startingUpload, setStartingUpload] = useState(false);
 
   // ============ UPLOAD TASK STATE ============
   const [task, setTask] = useState(null);
-  const [progressModalOpen, setProgressModalOpen] = useState(false);
   const [now, setNow] = useState(Date.now());
   const pollRef = useRef(null);
   const tickRef = useRef(null);
+
+  // Animation state cho progress display
+  //   modalRendered/pillRendered: có nên mount DOM element không
+  //   modalShown/pillShown: CSS class hiển thị (scale-100, opacity-100) hay ẩn (scale-0, opacity-0)
+  const [modalRendered, setModalRendered] = useState(false);
+  const [modalShown, setModalShown] = useState(false);
+  const [pillRendered, setPillRendered] = useState(false);
+  const [pillShown, setPillShown] = useState(false);
 
   const [rows, setRows] = useState([]);
   const [page, setPage] = useState(0);
@@ -157,7 +166,6 @@ export default function UploadPage() {
     return () => clearTimeout(t);
   }, [toast]);
 
-  // Cleanup pollers khi unmount
   useEffect(() => () => {
     if (pollRef.current) clearInterval(pollRef.current);
     if (tickRef.current) clearInterval(tickRef.current);
@@ -246,21 +254,17 @@ export default function UploadPage() {
   function askUpload() {
     if (!file) { setUploadError('Vui lòng chọn file'); return; }
     setUploadError('');
-    // KHÔNG đụng showUploadModal — Modal upload sẽ tự ẩn vì open = showUploadModal && !showUploadConfirm
     setShowUploadConfirm(true);
   }
-
-  function cancelUploadConfirm() {
-    // Đóng warning → modal upload tự hiện lại (vì showUploadModal vẫn true)
-    setShowUploadConfirm(false);
-  }
+  function cancelUploadConfirm() { setShowUploadConfirm(false); }
 
   async function doUpload() {
     setUploadError('');
     setShowUploadConfirm(false);
+    setStartingUpload(true);
     try {
+      // BE giờ trả về ngay lập tức sau khi parse (async đúng cách)
       const res = await startUpload(file);
-      // Upload đã bắt đầu → giờ mới ẩn modal upload và chuyển sang progress
       setShowUploadModal(false);
       const startedAt = Date.now();
       setTask({
@@ -274,13 +278,56 @@ export default function UploadPage() {
         currentProcessingNumber: null,
       });
       setFile(null);
-      setProgressModalOpen(true);
+      // Mount modal + trigger enter animation
+      openProgressModal();
       startPolling(res.taskId);
       startTicker();
     } catch (e) {
-      // Lỗi → showUploadConfirm đã false, showUploadModal còn true → modal upload tự hiện lại kèm lỗi
       setUploadError(e.message);
+    } finally {
+      setStartingUpload(false);
     }
+  }
+
+  // ===== Animation controls =====
+  function openProgressModal() {
+    // Nếu pill đang hiển thị, ẩn pill trước, mở modal
+    if (pillRendered) {
+      setPillShown(false);
+      setTimeout(() => setPillRendered(false), ANIM_MS);
+    }
+    setModalRendered(true);
+    // 2 rAF để React kịp render với modalShown=false, rồi CSS transition kích hoạt
+    requestAnimationFrame(() =>
+      requestAnimationFrame(() => setModalShown(true))
+    );
+  }
+
+  function minimizeToPill() {
+    // Modal → Pill
+    setModalShown(false);
+    setPillRendered(true);
+    requestAnimationFrame(() =>
+      requestAnimationFrame(() => setPillShown(true))
+    );
+    setTimeout(() => setModalRendered(false), ANIM_MS);
+  }
+
+  function maximizeFromPill() {
+    openProgressModal();
+  }
+
+  function dismissTask() {
+    // Ẩn cả modal + pill, cleanup task
+    setModalShown(false);
+    setPillShown(false);
+    setTimeout(() => {
+      setModalRendered(false);
+      setPillRendered(false);
+      setTask(null);
+    }, ANIM_MS);
+    if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null; }
+    if (tickRef.current) { clearInterval(tickRef.current); tickRef.current = null; }
   }
 
   function startTicker() {
@@ -321,14 +368,6 @@ export default function UploadPage() {
     }, POLL_INTERVAL_MS);
   }
 
-  function dismissTask() {
-    setTask(null);
-    setProgressModalOpen(false);
-    if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null; }
-    if (tickRef.current) { clearInterval(tickRef.current); tickRef.current = null; }
-  }
-
-  // === Progress computation ===
   function computeProgress() {
     if (!task) return 0;
     if (task.status === 'DONE') return 100;
@@ -355,28 +394,20 @@ export default function UploadPage() {
   // ============ SELECT + DELETE ============
   const allSelectedOnPage = rows.length > 0 && rows.every(r => selectedIds.has(r.id));
   const someSelectedOnPage = rows.some(r => selectedIds.has(r.id));
-
   function toggleOne(id) {
-    setSelectedIds(prev => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id); else next.add(id);
-      return next;
-    });
+    setSelectedIds(prev => { const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id); return next; });
   }
   function toggleAllOnPage() {
-    setSelectedIds(prev => {
-      const next = new Set(prev);
+    setSelectedIds(prev => { const next = new Set(prev);
       if (allSelectedOnPage) rows.forEach(r => next.delete(r.id));
-      else rows.forEach(r => next.add(r.id));
-      return next;
-    });
+      else rows.forEach(r => next.add(r.id)); return next; });
   }
   function askDeleteOne(row) { setConfirmDelete({ type: 'single', id: row.id, account: row.account }); }
   function askDeleteBulk() {
     if (selectedIds.size === 0) return;
     setConfirmDelete({ type: 'bulk', ids: Array.from(selectedIds) });
   }
-
   async function doDelete() {
     if (!confirmDelete) return;
     setDeleting(true);
@@ -413,7 +444,6 @@ export default function UploadPage() {
   const progress = computeProgress();
   const remainingMs = computeRemainingMs();
   const elapsedMs = task ? now - task.startedAt : 0;
-  const isTaskActive = !!task;
   const isRunning = task?.status === 'RUNNING';
   const isDone = task?.status === 'DONE';
   const isError = task?.status === 'ERROR';
@@ -573,44 +603,143 @@ export default function UploadPage() {
         </button>
       </div>
 
-      {/* Floating: upload progress pill (khi modal minimized) */}
-      {isTaskActive && !progressModalOpen && (
-        <div className="fixed top-6 left-1/2 -translate-x-1/2 z-40 sm:left-auto sm:right-6 sm:translate-x-0">
-          <button
-            onClick={() => setProgressModalOpen(true)}
-            className={`flex items-center gap-3 rounded-full px-4 py-2.5 text-white shadow-lg hover:scale-105 transition-all duration-200
-              ${isDone ? 'bg-gradient-to-br from-green-500 to-emerald-600'
-              : isError ? 'bg-gradient-to-br from-red-500 to-rose-600'
-              : 'bg-gradient-to-br from-blue-500 to-indigo-600'}`}
-            title="Mở lại tiến trình upload"
+      {/* ============= PROGRESS: PILL ============= */}
+      {pillRendered && task && (
+        <button
+          onClick={maximizeFromPill}
+          title="Mở lại tiến trình upload"
+          style={{ transitionDuration: `${ANIM_MS}ms`, transformOrigin: 'top right' }}
+          className={`fixed top-6 right-6 z-40 flex items-center gap-3 rounded-full px-4 py-2.5 text-white shadow-lg
+                      transition-all ease-out
+                      ${isDone ? 'bg-gradient-to-br from-green-500 to-emerald-600'
+                        : isError ? 'bg-gradient-to-br from-red-500 to-rose-600'
+                        : 'bg-gradient-to-br from-blue-500 to-indigo-600'}
+                      ${pillShown ? 'opacity-100 scale-100 translate-x-0 translate-y-0' : 'opacity-0 scale-0'}
+                    `}
+        >
+          {isDone ? <CheckIcon size={18} /> : isError ? <XIcon size={18} /> : (
+            <svg className="animate-spin w-5 h-5" viewBox="0 0 24 24" fill="none">
+              <circle cx="12" cy="12" r="10" stroke="currentColor" strokeOpacity="0.3" strokeWidth="3"/>
+              <path d="M12 2 A10 10 0 0 1 22 12" stroke="currentColor" strokeWidth="3" strokeLinecap="round"/>
+            </svg>
+          )}
+          <span className="text-sm font-semibold">
+            {isDone ? 'Upload xong' : isError ? 'Upload lỗi' : `Upload ${progress}%`}
+          </span>
+          {(isDone || isError) && (
+            <span
+              onClick={(e) => { e.stopPropagation(); dismissTask(); }}
+              className="ml-1 rounded-full p-1 hover:bg-white/20 transition"
+              role="button" aria-label="Đóng"
+            >
+              <XIcon size={14} />
+            </span>
+          )}
+        </button>
+      )}
+
+      {/* ============= PROGRESS: MODAL (custom, có animation) ============= */}
+      {modalRendered && task && (
+        <div className="fixed inset-0 z-50 pointer-events-none">
+          {/* Backdrop */}
+          <div
+            style={{ transitionDuration: `${ANIM_MS}ms` }}
+            onClick={() => (isRunning ? minimizeToPill() : dismissTask())}
+            className={`absolute inset-0 bg-black transition-opacity
+              ${modalShown ? 'bg-opacity-50 pointer-events-auto' : 'bg-opacity-0 pointer-events-none'}`}
+          />
+          {/* Content — animate scale + translate về top-right (nơi pill sẽ hiển thị) */}
+          <div
+            style={{
+              transitionDuration: `${ANIM_MS}ms`,
+              transformOrigin: 'top right',
+            }}
+            className={`absolute top-1/2 left-1/2 pointer-events-auto
+              bg-white rounded-2xl shadow-2xl w-[calc(100%-2rem)] max-w-md p-6
+              transition-all ease-out
+              ${modalShown
+                ? 'opacity-100 scale-100 -translate-x-1/2 -translate-y-1/2'
+                : 'opacity-0 scale-0 translate-x-[calc(50vw-3.5rem-100%)] translate-y-[calc(-50vh+2rem)]'
+              }`}
           >
-            {isDone ? <CheckIcon size={18} /> : isError ? <XIcon size={18} /> : (
-              <div className="relative w-5 h-5">
-                <svg className="animate-spin w-5 h-5" viewBox="0 0 24 24" fill="none">
-                  <circle cx="12" cy="12" r="10" stroke="currentColor" strokeOpacity="0.3" strokeWidth="3"/>
-                  <path d="M12 2 A10 10 0 0 1 22 12" stroke="currentColor" strokeWidth="3" strokeLinecap="round"/>
-                </svg>
+            <div className="flex items-start justify-between mb-4">
+              <h3 className="text-lg font-semibold text-gray-800">
+                {isDone ? '✅ Upload hoàn tất' : isError ? '❌ Upload lỗi' : '⏳ Đang xử lý upload'}
+              </h3>
+              <button
+                onClick={() => (isRunning ? minimizeToPill() : dismissTask())}
+                className="rounded p-1 hover:bg-gray-100 text-gray-500"
+                title={isRunning ? 'Thu nhỏ' : 'Đóng'}
+              >
+                {isRunning ? <MinimizeIcon size={18} /> : <XIcon size={18} />}
+              </button>
+            </div>
+
+            <div className="mb-4">
+              <div className="flex justify-between items-baseline mb-2">
+                <span className="text-sm text-gray-600">Tiến độ</span>
+                <span className={`text-2xl font-bold ${isError ? 'text-red-600' : isDone ? 'text-green-600' : 'text-blue-600'}`}>
+                  {progress}%
+                </span>
+              </div>
+              <div className="w-full h-3 bg-gray-200 rounded-full overflow-hidden">
+                <div
+                  className={`h-full transition-all duration-200 ease-out
+                    ${isError ? 'bg-red-500' : isDone ? 'bg-green-500' : 'bg-gradient-to-r from-blue-500 to-indigo-500'}`}
+                  style={{ width: `${progress}%` }}
+                />
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3 text-sm">
+              <div className="rounded-lg bg-slate-50 border border-slate-200 p-3">
+                <div className="text-xs text-gray-500">Đã xử lý</div>
+                <div className="font-semibold text-gray-800">{task.savedRows} / {task.totalRows} đơn</div>
+              </div>
+              <div className="rounded-lg bg-slate-50 border border-slate-200 p-3">
+                <div className="text-xs text-gray-500">Đã trôi qua</div>
+                <div className="font-semibold text-gray-800">{formatDuration(elapsedMs)}</div>
+              </div>
+              <div className="rounded-lg bg-slate-50 border border-slate-200 p-3">
+                <div className="text-xs text-gray-500">Dự kiến</div>
+                <div className="font-semibold text-gray-800">{formatDuration(task.estimatedMillis)}</div>
+              </div>
+              <div className="rounded-lg bg-slate-50 border border-slate-200 p-3">
+                <div className="text-xs text-gray-500">Còn lại</div>
+                <div className="font-semibold text-gray-800">{isRunning ? formatDuration(remainingMs) : '—'}</div>
+              </div>
+            </div>
+
+            {isError && (
+              <div className="mt-4 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">
+                {task.errorMessage || 'Có lỗi xảy ra trong quá trình upload'}
               </div>
             )}
-            <span className="text-sm font-semibold">
-              {isDone ? 'Upload xong' : isError ? 'Upload lỗi' : `Upload ${progress}%`}
-            </span>
-            {(isDone || isError) && (
-              <span
-                onClick={(e) => { e.stopPropagation(); dismissTask(); }}
-                className="ml-1 rounded-full p-1 hover:bg-white/20 transition"
-                role="button"
-                aria-label="Đóng"
-              >
-                <XIcon size={14} />
-              </span>
+            {isDone && (
+              <div className="mt-4 rounded-lg border border-green-200 bg-green-50 p-3 text-sm text-green-700">
+                Đã import {task.totalRows} đơn thành công. Data cũ đã được xóa.
+              </div>
             )}
-          </button>
+
+            <div className="mt-5 flex justify-end gap-2">
+              {isRunning ? (
+                <button onClick={minimizeToPill}
+                  className="inline-flex items-center gap-2 rounded-lg border border-gray-300 px-4 py-2 text-sm hover:bg-gray-50">
+                  <MinimizeIcon size={16} /> Thu nhỏ
+                </button>
+              ) : (
+                <button onClick={dismissTask}
+                  className="rounded-lg bg-blue-600 hover:bg-blue-700 px-4 py-2 text-sm text-white">
+                  Đóng
+                </button>
+              )}
+            </div>
+          </div>
         </div>
       )}
 
       {toast && (
-        <div className={`fixed top-6 right-6 z-50 rounded-lg px-4 py-3 text-sm text-white shadow-lg transition
+        <div className={`fixed top-6 right-6 z-[60] rounded-lg px-4 py-3 text-sm text-white shadow-lg transition
           ${toast.type === 'success' ? 'bg-green-600' : 'bg-red-600'}`}>
           {toast.msg}
         </div>
@@ -682,10 +811,10 @@ export default function UploadPage() {
         </div>
       </Modal>
 
-      {/* Modal upload — TỰ ẨN KHI WARNING MỞ */}
+      {/* Modal upload */}
       <Modal
         open={showUploadModal && !showUploadConfirm}
-        onClose={() => setShowUploadModal(false)}
+        onClose={() => !startingUpload && setShowUploadModal(false)}
         title="Upload file Excel"
       >
         <div className="mb-3">
@@ -695,98 +824,12 @@ export default function UploadPage() {
         </div>
         <DragDropZone file={file} onFileSelected={setFile} />
         <button onClick={askUpload}
-          disabled={isRunning}
+          disabled={isRunning || startingUpload}
           className="mt-4 w-full rounded-lg bg-green-600 px-4 py-2.5 font-medium text-white hover:bg-green-700 disabled:opacity-60">
-          {isRunning ? 'Đang có upload chạy...' : 'Upload'}
+          {startingUpload ? 'Đang gửi file...' : isRunning ? 'Đang có upload chạy...' : 'Upload'}
         </button>
         {uploadError && (
           <div className="mt-4 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">{uploadError}</div>
-        )}
-      </Modal>
-
-      {/* Modal PROGRESS */}
-      <Modal
-        open={progressModalOpen}
-        onClose={() => {
-          if (isRunning) setProgressModalOpen(false);
-          else dismissTask();
-        }}
-        title={
-          isDone ? '✅ Upload hoàn tất'
-          : isError ? '❌ Upload lỗi'
-          : '⏳ Đang xử lý upload'
-        }
-        maxWidth="max-w-md"
-      >
-        {task && (
-          <div>
-            <div className="mb-4">
-              <div className="flex justify-between items-baseline mb-2">
-                <span className="text-sm text-gray-600">Tiến độ</span>
-                <span className={`text-2xl font-bold ${isError ? 'text-red-600' : isDone ? 'text-green-600' : 'text-blue-600'}`}>
-                  {progress}%
-                </span>
-              </div>
-              <div className="w-full h-3 bg-gray-200 rounded-full overflow-hidden">
-                <div
-                  className={`h-full transition-all duration-200 ease-out
-                    ${isError ? 'bg-red-500' : isDone ? 'bg-green-500' : 'bg-gradient-to-r from-blue-500 to-indigo-500'}`}
-                  style={{ width: `${progress}%` }}
-                />
-              </div>
-            </div>
-
-            <div className="grid grid-cols-2 gap-3 text-sm">
-              <div className="rounded-lg bg-slate-50 border border-slate-200 p-3">
-                <div className="text-xs text-gray-500">Đã xử lý</div>
-                <div className="font-semibold text-gray-800">{task.savedRows} / {task.totalRows} đơn</div>
-              </div>
-              <div className="rounded-lg bg-slate-50 border border-slate-200 p-3">
-                <div className="text-xs text-gray-500">Đã trôi qua</div>
-                <div className="font-semibold text-gray-800">{formatDuration(elapsedMs)}</div>
-              </div>
-              <div className="rounded-lg bg-slate-50 border border-slate-200 p-3">
-                <div className="text-xs text-gray-500">Dự kiến</div>
-                <div className="font-semibold text-gray-800">{formatDuration(task.estimatedMillis)}</div>
-              </div>
-              <div className="rounded-lg bg-slate-50 border border-slate-200 p-3">
-                <div className="text-xs text-gray-500">Còn lại</div>
-                <div className="font-semibold text-gray-800">
-                  {isRunning ? formatDuration(remainingMs) : '—'}
-                </div>
-              </div>
-            </div>
-
-            {isError && (
-              <div className="mt-4 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">
-                {task.errorMessage || 'Có lỗi xảy ra trong quá trình upload'}
-              </div>
-            )}
-
-            {isDone && (
-              <div className="mt-4 rounded-lg border border-green-200 bg-green-50 p-3 text-sm text-green-700">
-                Đã import {task.totalRows} đơn thành công. Data cũ đã được xóa.
-              </div>
-            )}
-
-            <div className="mt-5 flex justify-end gap-2">
-              {isRunning ? (
-                <button
-                  onClick={() => setProgressModalOpen(false)}
-                  className="inline-flex items-center gap-2 rounded-lg border border-gray-300 px-4 py-2 text-sm hover:bg-gray-50"
-                >
-                  <MinimizeIcon size={16} /> Thu nhỏ
-                </button>
-              ) : (
-                <button
-                  onClick={dismissTask}
-                  className="rounded-lg bg-blue-600 hover:bg-blue-700 px-4 py-2 text-sm text-white"
-                >
-                  Đóng
-                </button>
-              )}
-            </div>
-          </div>
         )}
       </Modal>
 
