@@ -38,7 +38,12 @@ export async function updateProcessingNumber(value) {
   return data.currentProcessingNumber ?? null;
 }
 
-export async function uploadExcel(file) {
+/**
+ * Bắt đầu upload. Server parse file sync và trả về task info ngay:
+ *   { taskId, estimatedMillis, totalRows }
+ * Sau đó truncate + insert chạy nền, poll qua getUploadStatus.
+ */
+export async function startUpload(file) {
   const formData = new FormData();
   formData.append('file', file);
   const res = await fetch(`${BASE_URL}/api/shop-orders/upload`, {
@@ -46,6 +51,21 @@ export async function uploadExcel(file) {
     headers: { ...authHeaders() },
     body: formData,
   });
+  return parseResponse(res);
+}
+
+/**
+ * Poll trạng thái task upload.
+ * Trả về: { taskId, status: 'RUNNING'|'DONE'|'ERROR',
+ *           estimatedMillis, startedAt, completedAt?,
+ *           totalRows, savedRows,
+ *           currentProcessingNumber?, errorMessage? }
+ */
+export async function getUploadStatus(taskId) {
+  const res = await fetch(`${BASE_URL}/api/shop-orders/upload/status/${taskId}`, {
+    headers: { ...authHeaders() },
+  });
+  if (res.status === 404) throw new Error('Task không tồn tại hoặc đã hết hạn');
   return parseResponse(res);
 }
 
@@ -69,9 +89,6 @@ export async function managementSearch(keyword, sheetType) {
   return parseResponse(res);
 }
 
-/**
- * Phân trang management. Trả về { items, page, size, hasMore }.
- */
 export async function managementSearchPaged(keyword, sheetType, page = 0, size = 100) {
   const params = new URLSearchParams();
   if (keyword) params.append('keyword', keyword);
