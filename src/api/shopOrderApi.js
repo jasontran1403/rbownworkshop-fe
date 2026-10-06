@@ -19,30 +19,84 @@ async function parseResponse(res) {
   return body.data ?? body;
 }
 
-export async function getProcessingNumber() {
+// ============================================================
+//  Processing numbers (3 loại)
+// ============================================================
+
+/**
+ * Trả về object:
+ *   { superVip: number|null, vip: number|null, normal: number|null }
+ */
+export async function getProcessingNumbers() {
   const res = await fetch(`${BASE_URL}/api/shop-orders/processing-number`, {
     headers: { ...authHeaders() },
   });
   const data = await parseResponse(res);
-  return data.currentProcessingNumber ?? null;
+  return {
+    superVip: data?.superVip ?? null,
+    vip: data?.vip ?? null,
+    normal: data?.normal ?? null,
+  };
 }
 
-export async function updateProcessingNumber(value) {
+/**
+ * Update một số đang xử lý theo loại.
+ *   type: 'SUPER_VIP' | 'VIP' | 'NORMAL'
+ *   value: number | null  (null = xoá)
+ * Trả về object 3 số sau khi update.
+ */
+export async function updateProcessingNumber(type, value) {
   const params = new URLSearchParams();
+  if (type) params.append('type', type);
   if (value !== '' && value != null) params.append('value', String(value));
   const res = await fetch(
     `${BASE_URL}/api/shop-orders/processing-number?${params.toString()}`,
     { method: 'PUT', headers: { ...authHeaders() } },
   );
   const data = await parseResponse(res);
-  return data.currentProcessingNumber ?? null;
+  return {
+    superVip: data?.superVip ?? null,
+    vip: data?.vip ?? null,
+    normal: data?.normal ?? null,
+  };
 }
 
-/**
- * Bắt đầu upload. Server parse file sync và trả về task info ngay:
- *   { taskId, estimatedMillis, totalRows }
- * Sau đó truncate + insert chạy nền, poll qua getUploadStatus.
- */
+// ============================================================
+//  Management passcode (/management)
+// ============================================================
+
+/** GET status — { locked, remainingSeconds?, failedAttempts?, remainingAttempts? } */
+export async function getManagementAccessStatus() {
+  const res = await fetch(`${BASE_URL}/api/management-access/status`, {
+    headers: { ...authHeaders() },
+  });
+  const body = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(body?.message || 'Có lỗi xảy ra');
+  return body.data ?? body;
+}
+
+/** POST verify — { success, locked, remainingSeconds?, failedAttempts?, remainingAttempts?, reason? } */
+export async function verifyManagementPasscode(passcode) {
+  const res = await fetch(`${BASE_URL}/api/management-access/verify`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...authHeaders() },
+    body: JSON.stringify({ passcode }),
+  });
+  const body = await res.json().catch(() => ({}));
+  if (res.status === 429) {
+    throw new Error('Thao tác quá nhanh, vui lòng chậm lại.');
+  }
+  if (!res.ok) {
+    throw new Error(body?.message || 'Có lỗi xảy ra');
+  }
+  // Unwrap nếu backend bọc { data: {...} }
+  return body.data ?? body;
+}
+
+// ============================================================
+//  Upload
+// ============================================================
+
 export async function startUpload(file) {
   const formData = new FormData();
   formData.append('file', file);
@@ -54,13 +108,6 @@ export async function startUpload(file) {
   return parseResponse(res);
 }
 
-/**
- * Poll trạng thái task upload.
- * Trả về: { taskId, status: 'RUNNING'|'DONE'|'ERROR',
- *           estimatedMillis, startedAt, completedAt?,
- *           totalRows, savedRows,
- *           currentProcessingNumber?, errorMessage? }
- */
 export async function getUploadStatus(taskId) {
   const res = await fetch(`${BASE_URL}/api/shop-orders/upload/status/${taskId}`, {
     headers: { ...authHeaders() },
@@ -68,6 +115,10 @@ export async function getUploadStatus(taskId) {
   if (res.status === 404) throw new Error('Task không tồn tại hoặc đã hết hạn');
   return parseResponse(res);
 }
+
+// ============================================================
+//  Search
+// ============================================================
 
 export async function searchOrders(account, sheetType) {
   const params = new URLSearchParams();

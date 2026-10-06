@@ -6,7 +6,7 @@ import { formatDate } from '../../utils/format';
 import {
   startUpload,
   getUploadStatus,
-  getProcessingNumber,
+  getProcessingNumbers,
   updateProcessingNumber,
   managementSearchPaged,
   deleteOrder,
@@ -20,9 +20,16 @@ const TICK_INTERVAL_MS = 100;
 const ANIM_MS = 350;
 
 const SHEET_TYPES = [
-  { value: 'NORMAL', label: 'Thường' },
-  { value: 'VIP', label: 'Ưu tiên' },
+  { value: 'NORMAL',    label: 'Thường' },
+  { value: 'VIP',       label: 'Ưu tiên' },
   { value: 'SUPER_VIP', label: 'Ưu tiên VIP' },
+];
+
+/** 3 loại processing number — thứ tự hiển thị trong UI. */
+const PROCESSING_TYPES = [
+  { key: 'superVip', apiKey: 'SUPER_VIP', label: 'Ưu tiên VIP', color: 'bg-orange-500 hover:bg-orange-600' },
+  { key: 'vip',      apiKey: 'VIP',       label: 'Ưu tiên',     color: 'bg-yellow-500 hover:bg-yellow-600' },
+  { key: 'normal',   apiKey: 'NORMAL',    label: 'Thường',      color: 'bg-blue-500  hover:bg-blue-600'   },
 ];
 
 // ===================== ICONS =====================
@@ -42,15 +49,6 @@ function ArrowUpIcon({ size = 22 }) {
       fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
       <line x1="12" y1="19" x2="12" y2="5" />
       <polyline points="5 12 12 5 19 12" />
-    </svg>
-  );
-}
-function EyeIcon({ size = 14 }) {
-  return (
-    <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24"
-      fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
-      <circle cx="12" cy="12" r="3" />
     </svg>
   );
 }
@@ -111,30 +109,26 @@ function formatDuration(ms) {
 }
 
 export default function UploadPage() {
-  const [showNumberModal, setShowNumberModal] = useState(false);
+  const [showNumbersModal, setShowNumbersModal] = useState(false);
   const [showUploadModal, setShowUploadModal] = useState(false);
   const [showUploadConfirm, setShowUploadConfirm] = useState(false);
-  const [showProtectionModal, setShowProtectionModal] = useState(null);
   const [confirmDelete, setConfirmDelete] = useState(null);
   const [deleting, setDeleting] = useState(false);
 
-  const [currentNumber, setCurrentNumber] = useState('');
-  const [savedNumber, setSavedNumber] = useState(null);
-  const [savingNumber, setSavingNumber] = useState(false);
+  // 3 numbers — editing drafts + saved values
+  const [numbers, setNumbers] = useState({ superVip: null, vip: null, normal: null });
+  const [draftNumbers, setDraftNumbers] = useState({ superVip: '', vip: '', normal: '' });
+  const [savingType, setSavingType] = useState(null);
 
   const [file, setFile] = useState(null);
   const [uploadError, setUploadError] = useState('');
   const [startingUpload, setStartingUpload] = useState(false);
 
-  // ============ UPLOAD TASK STATE ============
   const [task, setTask] = useState(null);
   const [now, setNow] = useState(Date.now());
   const pollRef = useRef(null);
   const tickRef = useRef(null);
 
-  // Animation state cho progress display
-  //   modalRendered/pillRendered: có nên mount DOM element không
-  //   modalShown/pillShown: CSS class hiển thị (scale-100, opacity-100) hay ẩn (scale-0, opacity-0)
   const [modalRendered, setModalRendered] = useState(false);
   const [modalShown, setModalShown] = useState(false);
   const [pillRendered, setPillRendered] = useState(false);
@@ -155,7 +149,7 @@ export default function UploadPage() {
   const scrollRef = useRef(null);
   const [showBackToTop, setShowBackToTop] = useState(false);
 
-  useEffect(() => { loadNumber(); }, []);
+  useEffect(() => { loadNumbers(); }, []);
   useEffect(() => {
     resetAndLoad();
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -171,10 +165,15 @@ export default function UploadPage() {
     if (tickRef.current) clearInterval(tickRef.current);
   }, []);
 
-  async function loadNumber() {
+  async function loadNumbers() {
     try {
-      const val = await getProcessingNumber();
-      if (val != null) { setCurrentNumber(String(val)); setSavedNumber(val); }
+      const n = await getProcessingNumbers();
+      setNumbers(n);
+      setDraftNumbers({
+        superVip: n.superVip == null ? '' : String(n.superVip),
+        vip:      n.vip      == null ? '' : String(n.vip),
+        normal:   n.normal   == null ? '' : String(n.normal),
+      });
     } catch (e) { /* noop */ }
   }
 
@@ -226,28 +225,44 @@ export default function UploadPage() {
     } catch (e) { showToast('error', 'Copy thất bại'); }
   }
 
-  function handleNumberChange(e) { setCurrentNumber(e.target.value.replace(/[^0-9]/g, '')); }
-
-  async function handleSaveNumber() {
-    setSavingNumber(true);
-    try {
-      const v = currentNumber === '' ? null : Number(currentNumber);
-      const updated = await updateProcessingNumber(v);
-      setSavedNumber(updated); showToast('success', 'Đã lưu số đang xử lý');
-    } catch (e) { showToast('error', 'Lỗi: ' + e.message); }
-    finally { setSavingNumber(false); }
+  function handleDraftChange(key, val) {
+    const clean = val.replace(/[^0-9]/g, '');
+    setDraftNumbers((prev) => ({ ...prev, [key]: clean }));
   }
 
-  async function handleQuickIncrement() {
-    setSavingNumber(true);
+  async function handleSaveNumber(typeDef) {
+    setSavingType(typeDef.key);
     try {
-      const base = Number(currentNumber || savedNumber || 0);
-      const next = (Number.isFinite(base) ? base : 0) + 1;
-      const updated = await updateProcessingNumber(next);
-      setSavedNumber(updated); setCurrentNumber(String(updated ?? next));
-      showToast('success', `Đã cập nhật lên ${updated ?? next}`);
+      const raw = draftNumbers[typeDef.key];
+      const v = raw === '' ? null : Number(raw);
+      const updated = await updateProcessingNumber(typeDef.apiKey, v);
+      setNumbers(updated);
+      setDraftNumbers({
+        superVip: updated.superVip == null ? '' : String(updated.superVip),
+        vip:      updated.vip      == null ? '' : String(updated.vip),
+        normal:   updated.normal   == null ? '' : String(updated.normal),
+      });
+      showToast('success', `Đã lưu số ${typeDef.label}`);
     } catch (e) { showToast('error', 'Lỗi: ' + e.message); }
-    finally { setSavingNumber(false); }
+    finally { setSavingType(null); }
+  }
+
+  async function handleQuickIncrement(typeDef) {
+    setSavingType(typeDef.key);
+    try {
+      const current = numbers[typeDef.key];
+      const base = Number.isFinite(Number(current)) ? Number(current) : 0;
+      const next = base + 1;
+      const updated = await updateProcessingNumber(typeDef.apiKey, next);
+      setNumbers(updated);
+      setDraftNumbers({
+        superVip: updated.superVip == null ? '' : String(updated.superVip),
+        vip:      updated.vip      == null ? '' : String(updated.vip),
+        normal:   updated.normal   == null ? '' : String(updated.normal),
+      });
+      showToast('success', `Đã cập nhật ${typeDef.label} lên ${updated[typeDef.key] ?? next}`);
+    } catch (e) { showToast('error', 'Lỗi: ' + e.message); }
+    finally { setSavingType(null); }
   }
 
   // ============ UPLOAD FLOW ============
@@ -263,7 +278,6 @@ export default function UploadPage() {
     setShowUploadConfirm(false);
     setStartingUpload(true);
     try {
-      // BE giờ trả về ngay lập tức sau khi parse (async đúng cách)
       const res = await startUpload(file);
       setShowUploadModal(false);
       const startedAt = Date.now();
@@ -275,10 +289,8 @@ export default function UploadPage() {
         savedRows: 0,
         status: 'RUNNING',
         errorMessage: null,
-        currentProcessingNumber: null,
       });
       setFile(null);
-      // Mount modal + trigger enter animation
       openProgressModal();
       startPolling(res.taskId);
       startTicker();
@@ -289,22 +301,18 @@ export default function UploadPage() {
     }
   }
 
-  // ===== Animation controls =====
   function openProgressModal() {
-    // Nếu pill đang hiển thị, ẩn pill trước, mở modal
     if (pillRendered) {
       setPillShown(false);
       setTimeout(() => setPillRendered(false), ANIM_MS);
     }
     setModalRendered(true);
-    // 2 rAF để React kịp render với modalShown=false, rồi CSS transition kích hoạt
     requestAnimationFrame(() =>
       requestAnimationFrame(() => setModalShown(true))
     );
   }
 
   function minimizeToPill() {
-    // Modal → Pill
     setModalShown(false);
     setPillRendered(true);
     requestAnimationFrame(() =>
@@ -313,12 +321,9 @@ export default function UploadPage() {
     setTimeout(() => setModalRendered(false), ANIM_MS);
   }
 
-  function maximizeFromPill() {
-    openProgressModal();
-  }
+  function maximizeFromPill() { openProgressModal(); }
 
   function dismissTask() {
-    // Ẩn cả modal + pill, cleanup task
     setModalShown(false);
     setPillShown(false);
     setTimeout(() => {
@@ -345,7 +350,6 @@ export default function UploadPage() {
           savedRows: s.savedRows ?? prev.savedRows,
           status: s.status,
           errorMessage: s.errorMessage,
-          currentProcessingNumber: s.currentProcessingNumber ?? prev.currentProcessingNumber,
         } : prev);
 
         if (s.status === 'DONE' || s.status === 'ERROR') {
@@ -353,7 +357,7 @@ export default function UploadPage() {
           clearInterval(tickRef.current); tickRef.current = null;
           if (s.status === 'DONE') {
             showToast('success', `Upload xong: ${s.totalRows} đơn`);
-            loadNumber();
+            loadNumbers();
             resetAndLoad();
           } else {
             showToast('error', 'Upload lỗi: ' + (s.errorMessage || 'không xác định'));
@@ -448,6 +452,15 @@ export default function UploadPage() {
   const isDone = task?.status === 'DONE';
   const isError = task?.status === 'ERROR';
 
+  // Hiển thị trên nút tròn "số đang xử lý" — ghép ngắn
+  const floatingNumbersLabel = (
+    <div className="flex flex-col leading-tight text-[10px] font-bold">
+      <span>V:{numbers.superVip ?? '—'}</span>
+      <span>U:{numbers.vip ?? '—'}</span>
+      <span>T:{numbers.normal ?? '—'}</span>
+    </div>
+  );
+
   return (
     <div className="h-screen w-full bg-gray-50 flex flex-col overflow-hidden">
       <div className="w-full px-4 sm:px-6 lg:px-8 pt-6 pb-3 shrink-0">
@@ -485,15 +498,15 @@ export default function UploadPage() {
                       onChange={toggleAllOnPage}
                       className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500 cursor-pointer" />
                   </th>
-                  <th className="px-3 py-2 text-left whitespace-nowrap">Số thứ tự</th>
+                  <th className="px-3 py-2 text-left whitespace-nowrap">STT</th>
                   <th className="px-3 py-2 text-left whitespace-nowrap">Tài khoản</th>
-                  <th className="px-3 py-2 text-left whitespace-nowrap">Mật khẩu</th>
-                  <th className="px-3 py-2 text-left whitespace-nowrap">Mã bảo vệ</th>
-                  <th className="px-3 py-2 text-left whitespace-nowrap">Số ngày treo</th>
                   <th className="px-3 py-2 text-left whitespace-nowrap">Gói DV</th>
                   <th className="px-3 py-2 text-left whitespace-nowrap">Giá</th>
+                  <th className="px-3 py-2 text-left whitespace-nowrap">Ưu tiên / Phí</th>
+                  <th className="px-3 py-2 text-left whitespace-nowrap">Vùng</th>
+                  <th className="px-3 py-2 text-left whitespace-nowrap">Game</th>
                   <th className="px-3 py-2 text-left whitespace-nowrap">Ngày đặt</th>
-                  <th className="px-3 py-2 text-left whitespace-nowrap">Ngày giao</th>
+                  <th className="px-3 py-2 text-left whitespace-nowrap">Số ngày treo</th>
                   <th className="px-3 py-2 text-left whitespace-nowrap">TT Hoàn tiền</th>
                   <th className="px-3 py-2 text-left whitespace-nowrap">TT Đơn</th>
                   <th className="px-3 py-2 text-right pr-28 whitespace-nowrap">Hành động</th>
@@ -513,7 +526,7 @@ export default function UploadPage() {
                           className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500 cursor-pointer" />
                       </td>
                       <td className="px-3 py-2">
-                        <span className="inline-flex items-center rounded-md bg-blue-100 px-2 py-0.5 text-xs font-semibold text-blue-700">#{r.id}</span>
+                        <span className="inline-flex items-center rounded-md bg-blue-100 px-2 py-0.5 text-xs font-semibold text-blue-700">#{r.sheetSequence ?? '—'}</span>
                       </td>
                       <td className="px-3 py-2">
                         {r.account ? (
@@ -523,27 +536,22 @@ export default function UploadPage() {
                           </button>
                         ) : '—'}
                       </td>
-                      <td className="px-3 py-2 font-mono text-xs text-gray-700">
-                        {r.password ? (
-                          <button onClick={() => copyToClipboard(r.password, 'mật khẩu')} title="Click để copy"
-                            className="text-left rounded px-1 -mx-1 py-0.5 hover:bg-blue-50 hover:text-blue-700 transition cursor-pointer font-mono">
-                            {r.password}
-                          </button>
-                        ) : '—'}
-                      </td>
-                      <td className="px-3 py-2">
-                        {r.protectionCode ? (
-                          <button onClick={() => setShowProtectionModal({ code: r.protectionCode, account: r.account })}
-                            className="inline-flex items-center gap-1 rounded bg-slate-100 hover:bg-slate-200 text-slate-700 px-2 py-1 text-xs font-medium transition">
-                            <EyeIcon size={12} /> Xem
-                          </button>
-                        ) : <span className="text-gray-400">—</span>}
-                      </td>
-                      <td className="px-3 py-2 text-center">{r.holdDays ?? '—'}</td>
                       <td className="px-3 py-2">{r.servicePackage}</td>
                       <td className="px-3 py-2 whitespace-nowrap">{formatNumber(r.servicePrice)}</td>
+                      <td className="px-3 py-2 whitespace-nowrap">
+                        {r.priorityRegister || '—'}
+                        {r.priorityFee ? <span className="text-xs text-gray-500 ml-1">({formatNumber(r.priorityFee)})</span> : null}
+                      </td>
+                      <td className="px-3 py-2 whitespace-nowrap">
+                        {r.regionRegister || '—'}
+                        {r.regionSelected ? <span className="text-xs text-gray-500 ml-1">({r.regionSelected})</span> : null}
+                      </td>
+                      <td className="px-3 py-2 whitespace-nowrap">
+                        {r.gameRegister || '—'}
+                        {r.gameSelected ? <span className="text-xs text-gray-500 ml-1">({r.gameSelected})</span> : null}
+                      </td>
                       <td className="px-3 py-2 whitespace-nowrap">{formatDate(r.orderDate)}</td>
-                      <td className="px-3 py-2 whitespace-nowrap">{formatDate(r.deliveryDate)}</td>
+                      <td className="px-3 py-2 text-center">{r.holdDays ?? '—'}</td>
                       <td className="px-3 py-2">{r.refundNoteStatus || <span className="text-gray-400">—</span>}</td>
                       <td className="px-3 py-2">{r.orderNoteStatus || <span className="text-gray-400">—</span>}</td>
                       <td className="px-3 py-2 text-right pr-28 whitespace-nowrap">
@@ -575,12 +583,12 @@ export default function UploadPage() {
         </div>
       )}
 
-      {/* Floating: number */}
+      {/* Floating: numbers */}
       <div className="fixed bottom-6 right-6 z-40">
-        <button onClick={() => setShowNumberModal(true)} title="Số đang xử lý"
-          className="flex h-14 w-14 items-center justify-center rounded-full text-white shadow-lg font-bold text-lg
+        <button onClick={() => setShowNumbersModal(true)} title="Các số đang xử lý"
+          className="flex h-14 w-14 items-center justify-center rounded-full text-white shadow-lg
                      bg-gradient-to-br from-indigo-500 to-purple-600 opacity-60 hover:opacity-100 hover:scale-110 hover:shadow-xl transition-all duration-200">
-          {savedNumber ?? '—'}
+          {floatingNumbersLabel}
         </button>
       </div>
 
@@ -638,17 +646,15 @@ export default function UploadPage() {
         </button>
       )}
 
-      {/* ============= PROGRESS: MODAL (custom, có animation) ============= */}
+      {/* ============= PROGRESS: MODAL ============= */}
       {modalRendered && task && (
         <div className="fixed inset-0 z-50 pointer-events-none">
-          {/* Backdrop */}
           <div
             style={{ transitionDuration: `${ANIM_MS}ms` }}
             onClick={() => (isRunning ? minimizeToPill() : dismissTask())}
             className={`absolute inset-0 bg-black transition-opacity
               ${modalShown ? 'bg-opacity-50 pointer-events-auto' : 'bg-opacity-0 pointer-events-none'}`}
           />
-          {/* Content — animate scale + translate về top-right (nơi pill sẽ hiển thị) */}
           <div
             style={{
               transitionDuration: `${ANIM_MS}ms`,
@@ -792,22 +798,47 @@ export default function UploadPage() {
         </div>
       </Modal>
 
-      {/* Modal number */}
-      <Modal open={showNumberModal} onClose={() => setShowNumberModal(false)} title="Số đang xử lý hiện tại" maxWidth="max-w-md">
-        <label className="block text-sm font-medium text-gray-700 mb-1">Số hiện tại</label>
-        <input type="text" inputMode="numeric" pattern="[0-9]*" value={currentNumber}
-          onChange={handleNumberChange}
-          onWheel={(e) => e.currentTarget.blur()}
-          onKeyDown={(e) => { if (['ArrowUp', 'ArrowDown', 'e', 'E', '+', '-', '.'].includes(e.key)) e.preventDefault(); }}
-          placeholder="VD: 125"
-          className="w-full rounded-lg border border-gray-300 px-3 py-2 focus:border-blue-500 focus:outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none" />
-        <div className="mt-4 flex items-center gap-2">
-          <button onClick={handleSaveNumber} disabled={savingNumber} className="rounded-lg bg-blue-600 px-4 py-2 text-white hover:bg-blue-700 disabled:opacity-60">
-            {savingNumber ? 'Đang lưu...' : 'Lưu'}
-          </button>
-          <button onClick={handleQuickIncrement} disabled={savingNumber} className="rounded-lg bg-emerald-600 px-4 py-2 text-white hover:bg-emerald-700 disabled:opacity-60">
-            + Cập nhật nhanh
-          </button>
+      {/* Modal number — 3 loại */}
+      <Modal open={showNumbersModal} onClose={() => setShowNumbersModal(false)} title="Các số đang xử lý" maxWidth="max-w-lg">
+        <div className="space-y-4">
+          {PROCESSING_TYPES.map((t) => (
+            <div key={t.key} className="rounded-lg border border-gray-200 p-3">
+              <div className="flex items-center justify-between mb-2">
+                <div>
+                  <div className="text-sm font-medium text-gray-800">{t.label}</div>
+                  <div className="text-xs text-gray-500">
+                    Hiện tại: <b className="tabular-nums">{numbers[t.key] ?? '—'}</b>
+                  </div>
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                <input
+                  type="text"
+                  inputMode="numeric"
+                  pattern="[0-9]*"
+                  value={draftNumbers[t.key]}
+                  onChange={(e) => handleDraftChange(t.key, e.target.value)}
+                  placeholder="VD: 125"
+                  className="flex-1 rounded-lg border border-gray-300 px-3 py-2 focus:border-blue-500 focus:outline-none"
+                />
+                <button
+                  onClick={() => handleSaveNumber(t)}
+                  disabled={savingType === t.key}
+                  className={`rounded-lg px-3 py-2 text-sm text-white disabled:opacity-60 ${t.color}`}
+                >
+                  {savingType === t.key ? '...' : 'Lưu'}
+                </button>
+                <button
+                  onClick={() => handleQuickIncrement(t)}
+                  disabled={savingType === t.key}
+                  className="rounded-lg bg-emerald-600 hover:bg-emerald-700 px-3 py-2 text-sm text-white disabled:opacity-60"
+                  title="Cộng 1 cho loại này"
+                >
+                  +1
+                </button>
+              </div>
+            </div>
+          ))}
         </div>
       </Modal>
 
@@ -833,37 +864,27 @@ export default function UploadPage() {
         )}
       </Modal>
 
-      {/* Modal protection code */}
-      <Modal open={!!showProtectionModal} onClose={() => setShowProtectionModal(null)}
-        title={`Mã bảo vệ${showProtectionModal?.account ? ' — ' + showProtectionModal.account : ''}`} maxWidth="max-w-md">
-        {showProtectionModal && (
-          <div>
-            <pre className="whitespace-pre-wrap break-all font-mono text-sm bg-slate-50 border border-slate-200 rounded-lg p-4 text-slate-800 leading-relaxed">
-{showProtectionModal.code}
-            </pre>
-            <button onClick={() => copyToClipboard(showProtectionModal.code, 'mã bảo vệ')}
-              className="mt-3 rounded-lg bg-slate-700 hover:bg-slate-800 px-4 py-2 text-white text-sm">Copy</button>
-          </div>
-        )}
-      </Modal>
-
-      {/* Modal edit */}
+      {/* Modal edit — chỉ các field còn trong entity mới */}
       <Modal open={!!editRow} onClose={() => setEditRow(null)} title={`Sửa đơn #${editRow?.id}`}>
         {editRow && (
           <div className="space-y-3 max-h-[70vh] overflow-y-auto pr-2">
             {[
-              ['customerName', 'Tên khách'], ['orderPlace', 'Chỗ order'], ['servicePackage', 'Gói DV'],
-              ['account', 'Tài khoản'], ['password', 'Mật khẩu'],
-              ['priorityRegister', 'Đăng ký ưu tiên (Có/Không)'], ['priorityFee', 'Phí ưu tiên'],
-              ['regionIp', 'IP vùng'], ['game20k', 'Game 20k'],
-              ['servicePrice', 'Giá DV'], ['actualAmount', 'Thực nhận'],
-              ['orderDate', 'Ngày đặt (yyyy-MM-dd)'], ['deliveryDate', 'Ngày giao (yyyy-MM-dd)'],
-              ['holdDays', 'Số ngày treo'], ['regionTransferStatus', 'TT chuyển vùng'],
-              ['depositRefund', 'Hoàn cọc'],
-              ['refundNoteStatus', 'TT hoàn tiền (note)'], ['orderNoteStatus', 'TT đơn (note)'],
-              ['noteRBown', 'Ghi chú R Bown'], ['noteLogAcc', 'Ghi chú log acc'],
-              ['noteAddMoneyLogAcc', 'Ghi chú cộng tiền log acc'],
-              ['noteAccError', 'Ghi chú acc lỗi'], ['noteAddMoneyFixAcc', 'Ghi chú cộng tiền fix lỗi acc'],
+              ['customerName', 'Tên khách'],
+              ['orderPlace', 'Chỗ order'],
+              ['servicePackage', 'Gói DV'],
+              ['account', 'Tài khoản'],
+              ['priorityRegister', 'Đăng ký ưu tiên (Có/Không)'],
+              ['priorityFee', 'Phí ưu tiên'],
+              ['regionRegister', 'Đăng ký chọn vùng (Có/Không)'],
+              ['regionSelected', 'Vùng chọn'],
+              ['gameRegister', 'Đăng ký chọn game (Có/Không)'],
+              ['gameSelected', 'Game chọn'],
+              ['servicePrice', 'Giá chốt'],
+              ['actualAmount', 'Thực nhận'],
+              ['orderDate', 'Ngày đặt (yyyy-MM-dd)'],
+              ['holdDays', 'Số ngày treo'],
+              ['refundNoteStatus', 'TT hoàn tiền'],
+              ['orderNoteStatus', 'TT đơn'],
             ].map(([field, label]) => (
               <div key={field}>
                 <label className="block text-xs font-medium text-gray-600 mb-1">{label}</label>

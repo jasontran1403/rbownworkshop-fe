@@ -1,6 +1,18 @@
-import { formatVnd, formatRefund, formatDate } from '../../utils/format';
+import { formatVnd, formatDate } from '../../utils/format';
 import { PackageBadge } from './StatusBadge';
 
+/**
+ * Các cột hiển thị khi tra cứu, theo yêu cầu:
+ *   STT
+ *   Tên gói / Giá
+ *   Đăng ký ưu tiên / Phí ưu tiên
+ *   Đăng ký chọn vùng / Vùng Chọn
+ *   Đăng Ký Chọn Game / Game Chọn
+ *   Ngày Đăng Ký
+ *   Số Ngày Treo
+ *   TT Hoàn Tiền
+ *   TT Đơn
+ */
 export default function OrderTable({ orders, currentProcessingNumber }) {
   const current = Number(currentProcessingNumber);
 
@@ -22,17 +34,31 @@ export default function OrderTable({ orders, currentProcessingNumber }) {
                 <div className="text-xs font-normal text-gray-500">Phí ưu tiên</div>
               </div>
             </th>
-            <th className="px-4 py-3 text-left font-medium">Ngày đăng ký</th>
-            <th className="px-4 py-3 text-left font-medium">Ngày hoàn thành</th>
-            <th className="px-4 py-3 text-left font-medium">Hoàn cọc</th>
+            <th className="px-4 py-3 text-left font-medium">
+              <div className="leading-tight">
+                <div>Đăng ký chọn vùng</div>
+                <div className="text-xs font-normal text-gray-500">Vùng chọn</div>
+              </div>
+            </th>
+            <th className="px-4 py-3 text-left font-medium">
+              <div className="leading-tight">
+                <div>Đăng ký chọn game</div>
+                <div className="text-xs font-normal text-gray-500">Game chọn</div>
+              </div>
+            </th>
+            <th className="px-4 py-3 text-left font-medium">Ngày đặt</th>
+            <th className="px-4 py-3 text-left font-medium">Số ngày treo</th>
             <th className="px-4 py-3 text-left font-medium">TT hoàn tiền</th>
             <th className="px-4 py-3 text-left font-medium">TT đơn</th>
           </tr>
         </thead>
         <tbody className="divide-y divide-gray-100">
           {orders.map((o, i) => {
-            const isDone = !!o.completeDate;
-            const isProcessing = current && o.id === current;
+            // "Hoàn thành" dựa vào orderNoteStatus
+            const noteLower = (o.orderNoteStatus || '').toLowerCase();
+            const isDone = noteLower.includes('hoàn thành') || noteLower.includes('hoan thanh');
+            const seq = o.sheetSequence;
+            const isProcessing = current && seq != null && seq === current;
 
             let rowBg = 'bg-gray-50';
             if (isDone) rowBg = 'bg-green-50';
@@ -45,8 +71,9 @@ export default function OrderTable({ orders, currentProcessingNumber }) {
                   ${isProcessing ? 'ring-2 ring-blue-400 ring-inset animate-pulse-border' : ''}
                 `}
               >
+                {/* STT = sheetSequence (dùng chung giữa 3 loại) */}
                 <td className="px-4 py-3 font-medium align-top">
-                  <span className="text-xs text-gray-400">#{o.id}</span>
+                  <span className="font-semibold text-gray-800">{seq ?? '—'}</span>
                 </td>
 
                 {/* Gói DV + Giá */}
@@ -75,15 +102,42 @@ export default function OrderTable({ orders, currentProcessingNumber }) {
                   </div>
                 </td>
 
+                {/* Đăng ký chọn vùng + Vùng chọn */}
+                <td className="px-4 py-3 align-top">
+                  <div className="leading-tight">
+                    <div>
+                      {o.regionRegister
+                        ? <span className="text-green-700 font-medium">{o.regionRegister}</span>
+                        : <span className="text-gray-500">Không</span>}
+                    </div>
+                    <div className="text-xs text-gray-600 mt-1">
+                      {o.regionSelected || '—'}
+                    </div>
+                  </div>
+                </td>
+
+                {/* Đăng ký chọn game + Game chọn */}
+                <td className="px-4 py-3 align-top">
+                  <div className="leading-tight">
+                    <div>
+                      {o.gameRegister
+                        ? <span className="text-green-700 font-medium">{o.gameRegister}</span>
+                        : <span className="text-gray-500">Không</span>}
+                    </div>
+                    <div className="text-xs text-gray-600 mt-1">
+                      {o.gameSelected || '—'}
+                    </div>
+                  </div>
+                </td>
+
                 <td className="px-4 py-3 align-top">{formatDate(o.registerDate)}</td>
-                <td className="px-4 py-3 align-top">{formatDate(o.completeDate)}</td>
-                <td className="px-4 py-3 align-top">{formatRefund(o.refundInfo)}</td>
+                <td className="px-4 py-3 align-top text-center">{o.holdDays ?? '—'}</td>
                 <td className="px-4 py-3 align-top">{o.refundNoteStatus || '—'}</td>
                 <td className="px-4 py-3 align-top">
                   <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${
                     isDone ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-700'
                   }`}>
-                    {o.orderNoteStatus || (isDone ? 'Hoàn thành' : 'Chưa hoàn thành')}
+                    {o.orderNoteStatus || '—'}
                   </span>
                 </td>
               </tr>

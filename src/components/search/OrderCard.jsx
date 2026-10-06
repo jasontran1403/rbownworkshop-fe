@@ -1,9 +1,11 @@
-import { formatVnd, formatRefund, formatDate } from '../../utils/format';
+import { formatVnd, formatDate } from '../../utils/format';
 import { PackageBadge } from './StatusBadge';
 
 export default function OrderCard({ order, currentProcessingNumber }) {
-  const isDone = !!order.completeDate;
-  const isProcessing = Number(currentProcessingNumber) && order.id === Number(currentProcessingNumber);
+  const noteLower = (order.orderNoteStatus || '').toLowerCase();
+  const isDone = noteLower.includes('hoàn thành') || noteLower.includes('hoan thanh');
+  const seq = order.sheetSequence;
+  const isProcessing = Number(currentProcessingNumber) && seq != null && seq === Number(currentProcessingNumber);
 
   let cardBg = 'bg-gray-50 border-gray-200';
   if (isDone) cardBg = 'bg-green-50 border-green-200';
@@ -14,12 +16,12 @@ export default function OrderCard({ order, currentProcessingNumber }) {
       ${isProcessing ? 'ring-2 ring-blue-400 animate-pulse-border' : ''}`}>
       <div className="flex items-center justify-between mb-2">
         <span className="text-sm text-gray-500">
-          STT #{order.sheetSequence ?? '—'} <span className="text-xs">(id {order.id})</span>
+          STT <b className="text-gray-800">#{seq ?? '—'}</b>
         </span>
         <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${
           isDone ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-700'
         }`}>
-          {order.orderNoteStatus || (isDone ? 'Hoàn thành' : 'Chưa hoàn thành')}
+          {order.orderNoteStatus || '—'}
         </span>
       </div>
 
@@ -30,12 +32,15 @@ export default function OrderCard({ order, currentProcessingNumber }) {
       </div>
 
       <div className="space-y-1.5 text-sm">
-        <Row label="Giá DV" value={formatVnd(order.servicePrice)} />
+        <Row label="Giá" value={formatVnd(order.servicePrice)} />
         <Row label="Đăng ký ưu tiên" value={order.priorityRegister || 'Không'} />
         <Row label="Phí ưu tiên" value={order.priorityFee ? formatVnd(order.priorityFee) : '—'} />
-        <Row label="Ngày đăng ký" value={formatDate(order.registerDate)} />
-        <Row label="Ngày hoàn thành" value={formatDate(order.completeDate)} />
-        <Row label="Hoàn cọc" value={formatRefund(order.refundInfo)} />
+        <Row label="Đăng ký chọn vùng" value={order.regionRegister || 'Không'} />
+        <Row label="Vùng chọn" value={order.regionSelected || '—'} />
+        <Row label="Đăng ký chọn game" value={order.gameRegister || 'Không'} />
+        <Row label="Game chọn" value={order.gameSelected || '—'} />
+        <Row label="Ngày đặt" value={formatDate(order.registerDate)} />
+        <Row label="Số ngày treo" value={order.holdDays ?? '—'} />
         <Row label="TT hoàn tiền" value={order.refundNoteStatus || '—'} />
       </div>
     </div>
