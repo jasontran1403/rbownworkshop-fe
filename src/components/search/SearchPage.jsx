@@ -4,7 +4,11 @@ import SearchInput from './SearchInput';
 import OrderTable from './OrderTable';
 import OrderCard from './OrderCard';
 import { useDebounce } from '../../hooks/useDebounce';
-import { searchOrders, getProcessingNumbers } from '../../api/shopOrderApi';
+import {
+  searchOrders,
+  getProcessingNumbers,
+  getAnnouncement,
+} from '../../api/shopOrderApi';
 
 const FILTER_OPTIONS = [
   { value: 'NORMAL',    label: 'Thường' },
@@ -30,7 +34,23 @@ function AdSlot({ label }) {
   );
 }
 
-/** 3 dòng số đang xử lý — mỗi dòng 1 loại. */
+/** Panel thông báo (HTML), scroll trong nội bộ. */
+function AnnouncementPanel({ html }) {
+  return (
+    <div className="h-full rounded-2xl bg-white shadow-sm border border-slate-200 flex flex-col overflow-hidden">
+      <div className="shrink-0 px-4 py-3 border-b border-slate-100 bg-gradient-to-r from-indigo-50 to-purple-50">
+        <h2 className="text-sm sm:text-base font-semibold text-indigo-700 flex items-center gap-2">
+          <span>📣</span> Thông báo
+        </h2>
+      </div>
+      <div
+        className="announcement-content flex-1 min-h-0 overflow-auto p-4 text-sm text-slate-800"
+        dangerouslySetInnerHTML={{ __html: html }}
+      />
+    </div>
+  );
+}
+
 function ProcessingNumbersPanel({ numbers }) {
   if (!numbers) return null;
   const rows = [
@@ -64,12 +84,16 @@ export default function SearchPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [numbers, setNumbers] = useState(null);
+  const [announcement, setAnnouncement] = useState('');
 
   const debouncedInput = useDebounce(input, 600);
 
   useEffect(() => {
     (async () => {
       try { setNumbers(await getProcessingNumbers()); } catch (e) { }
+    })();
+    (async () => {
+      try { setAnnouncement(await getAnnouncement()); } catch (e) { }
     })();
   }, []);
 
@@ -114,6 +138,7 @@ export default function SearchPage() {
   const orders = data?.results || [];
   const isEmpty = data && !error && orders.length === 0;
   const hasResults = data && !error && orders.length > 0;
+  const hasAnnouncement = !!(announcement && announcement.trim());
 
   // Số "đang xử lý" áp vào kết quả — dùng số theo loại đang filter
   const currentNumberForSelectedType = numbers
@@ -124,8 +149,8 @@ export default function SearchPage() {
 
   return (
     <div
-      className="w-full bg-gradient-to-b from-slate-50 to-slate-100 overflow-hidden flex flex-col"
-      style={{ height: '100dvh', width: '100dvw' }}
+      className="w-full bg-gradient-to-b from-slate-50 to-slate-100 flex flex-col md:overflow-hidden md:[height:100dvh]"
+      style={{ minHeight: '100dvh', width: '100dvw' }}
     >
       <div
         className="w-full px-3 sm:px-4 lg:px-6 pt-3 shrink-0"
@@ -134,72 +159,57 @@ export default function SearchPage() {
         <AdSlot label="TOP BANNER" />
       </div>
 
-      <div className="flex-1 min-h-0 w-full px-3 sm:px-4 lg:px-6 py-3">
-        <div className="h-full grid grid-cols-12 gap-3">
+      <div className="w-full px-3 sm:px-4 lg:px-6 py-3 md:flex-1 md:min-h-0">
+        <div className="grid grid-cols-12 gap-3 md:h-full">
           <aside className="hidden lg:block lg:col-span-2 h-full">
             <AdSlot label="LEFT SIDEBAR" />
           </aside>
 
-          <main className="col-span-12 lg:col-span-8 h-full min-h-0">
-            <div className="h-full rounded-2xl bg-white shadow-sm border border-slate-200 flex flex-col overflow-hidden">
-              <div className="shrink-0 p-4 sm:p-6 pb-3 border-b border-slate-100">
-                <div className="flex items-start justify-between gap-3 mb-4 flex-wrap">
-                  <h1 className="text-2xl font-bold text-gray-800">Tra cứu đơn hàng</h1>
-                  <ProcessingNumbersPanel numbers={numbers} />
+          <main className="col-span-12 lg:col-span-8 md:h-full md:min-h-0">
+            {/* Nếu CÓ thông báo → chia 30/70 trên md+, 1 cột trên mobile.
+                Nếu KHÔNG có thông báo → full width như cũ. */}
+            {hasAnnouncement ? (
+              <div className="flex flex-col md:flex-row gap-3 md:h-full md:min-h-0">
+                {/* Cột trái: thông báo — 30% trên desktop, trên cùng trên mobile */}
+                <div className="w-full md:w-[30%] md:shrink-0 h-56 md:h-full min-h-0">
+                  <AnnouncementPanel html={announcement} />
                 </div>
-
-                <div className="flex flex-col sm:flex-row gap-3">
-                  <div className="flex-1">
-                    <SearchInput value={input} onChange={setInput} loading={loading} />
-                  </div>
-                  <select
-                    value={sheetType}
-                    onChange={(e) => setSheetType(e.target.value)}
-                    className="rounded-lg border border-gray-300 px-3 py-2 bg-white focus:border-blue-500 focus:outline-none"
-                  >
-                    {FILTER_OPTIONS.map((o) => (
-                      <option key={o.value} value={o.value}>{o.label}</option>
-                    ))}
-                  </select>
+                {/* Cột phải: tra cứu — 70% trên desktop */}
+                <div className="flex-1 min-w-0 md:min-h-0 md:h-full">
+                  <LookupPanel
+                    input={input}
+                    setInput={setInput}
+                    sheetType={sheetType}
+                    setSheetType={setSheetType}
+                    loading={loading}
+                    error={error}
+                    isEmpty={isEmpty}
+                    hasResults={hasResults}
+                    data={data}
+                    orders={orders}
+                    numbers={numbers}
+                    currentNumberForSelectedType={currentNumberForSelectedType}
+                    forceCardView={true}
+                  />
                 </div>
               </div>
-
-              <div className="flex-1 min-h-0 flex flex-col p-4 sm:p-6 pt-4">
-                {error && (
-                  <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">{error}</div>
-                )}
-
-                {isEmpty && (
-                  <div className="flex-1 min-h-0 rounded-xl border border-dashed border-slate-200 bg-slate-50/50 flex items-center justify-center p-6">
-                    <p className="text-center text-gray-500 text-sm sm:text-base">
-                      Không tìm thấy đơn hàng của tài khoản này
-                    </p>
-                  </div>
-                )}
-
-                {hasResults && (
-                  <div className="flex-1 min-h-0 overflow-auto">
-                    <p className="text-sm text-gray-600 mb-3">
-                      Tìm thấy <b>{data.totalOrders}</b> đơn hàng
-                    </p>
-                    <OrderTable orders={orders} currentProcessingNumber={currentNumberForSelectedType} />
-                    <div className="space-y-3 md:hidden">
-                      {orders.map((o, i) => (
-                        <OrderCard key={i} order={o} currentProcessingNumber={currentNumberForSelectedType} />
-                      ))}
-                    </div>
-                  </div>
-                )}
-
-                {!data && !error && (
-                  <div className="flex-1 min-h-0 rounded-xl border border-dashed border-slate-200 bg-slate-50/50 flex items-center justify-center p-6">
-                    <p className="text-center text-gray-400 text-sm sm:text-base">
-                      Nhập tài khoản để tra cứu đơn hàng
-                    </p>
-                  </div>
-                )}
-              </div>
-            </div>
+            ) : (
+              <LookupPanel
+                input={input}
+                setInput={setInput}
+                sheetType={sheetType}
+                setSheetType={setSheetType}
+                loading={loading}
+                error={error}
+                isEmpty={isEmpty}
+                hasResults={hasResults}
+                data={data}
+                orders={orders}
+                numbers={numbers}
+                currentNumberForSelectedType={currentNumberForSelectedType}
+                forceCardView={false}
+              />
+            )}
           </main>
 
           <aside className="hidden lg:block lg:col-span-2 h-full">
@@ -213,6 +223,93 @@ export default function SearchPage() {
         style={{ height: 'clamp(120px, 15dvh, 180px)' }}
       >
         <AdSlot label="BOTTOM BANNER" />
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Panel tra cứu (card trắng với input + bảng/thẻ kết quả).
+ * forceCardView: khi true, không dùng bảng ở desktop mà dùng card xếp dọc
+ *   (áp dụng khi có cột thông báo bên trái, lookup chỉ chiếm 70% nên bảng chật).
+ */
+function LookupPanel({
+  input, setInput, sheetType, setSheetType, loading, error,
+  isEmpty, hasResults, data, orders, numbers, currentNumberForSelectedType,
+  forceCardView,
+}) {
+  return (
+    <div className="rounded-2xl bg-white shadow-sm border border-slate-200 flex flex-col md:h-full md:overflow-hidden">
+      <div className="p-4 sm:p-6 pb-3 border-b border-slate-100 md:shrink-0">
+        <div className="flex items-start justify-between gap-3 mb-4 flex-wrap">
+          <h1 className="text-xl sm:text-2xl font-bold text-gray-800">Tra cứu đơn hàng</h1>
+          <ProcessingNumbersPanel numbers={numbers} />
+        </div>
+
+        <div className="flex flex-col sm:flex-row gap-3">
+          <div className="flex-1">
+            <SearchInput value={input} onChange={setInput} loading={loading} />
+          </div>
+          <select
+            value={sheetType}
+            onChange={(e) => setSheetType(e.target.value)}
+            className="rounded-lg border border-gray-300 px-3 py-2 bg-white focus:border-blue-500 focus:outline-none"
+          >
+            {FILTER_OPTIONS.map((o) => (
+              <option key={o.value} value={o.value}>{o.label}</option>
+            ))}
+          </select>
+        </div>
+      </div>
+
+      <div className="flex flex-col p-4 sm:p-6 pt-4 md:flex-1 md:min-h-0">
+        {error && (
+          <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">{error}</div>
+        )}
+
+        {isEmpty && (
+          <div className="min-h-[160px] md:flex-1 md:min-h-0 rounded-xl border border-dashed border-slate-200 bg-slate-50/50 flex items-center justify-center p-6">
+            <p className="text-center text-gray-500 text-sm sm:text-base">
+              Không tìm thấy đơn hàng của tài khoản này
+            </p>
+          </div>
+        )}
+
+        {hasResults && (
+          <div className="md:flex-1 md:min-h-0 md:overflow-auto">
+            <p className="text-sm text-gray-600 mb-3">
+              Tìm thấy <b>{data.totalOrders}</b> đơn hàng
+            </p>
+
+            {forceCardView ? (
+              /* CARD VIEW cho cả mobile và desktop khi có cột thông báo.
+                 Padding 2 bên để pulse-ring không bị overflow-auto crop. */
+              <div className="space-y-3 p-2">
+                {orders.map((o, i) => (
+                  <OrderCard key={i} order={o} currentProcessingNumber={currentNumberForSelectedType} />
+                ))}
+              </div>
+            ) : (
+              <>
+                {/* Table ở md+ như cũ, card ở mobile */}
+                <OrderTable orders={orders} currentProcessingNumber={currentNumberForSelectedType} />
+                <div className="space-y-3 md:hidden p-2">
+                  {orders.map((o, i) => (
+                    <OrderCard key={i} order={o} currentProcessingNumber={currentNumberForSelectedType} />
+                  ))}
+                </div>
+              </>
+            )}
+          </div>
+        )}
+
+        {!data && !error && (
+          <div className="min-h-[160px] md:flex-1 md:min-h-0 rounded-xl border border-dashed border-slate-200 bg-slate-50/50 flex items-center justify-center p-6">
+            <p className="text-center text-gray-400 text-sm sm:text-base">
+              Nhập tài khoản để tra cứu đơn hàng
+            </p>
+          </div>
+        )}
       </div>
     </div>
   );

@@ -62,6 +62,28 @@ export async function updateProcessingNumber(type, value) {
 }
 
 // ============================================================
+//  Announcement (HTML — hiển thị bên trang tra cứu)
+// ============================================================
+
+export async function getAnnouncement() {
+  const res = await fetch(`${BASE_URL}/api/shop-orders/announcement`, {
+    headers: { ...authHeaders() },
+  });
+  const data = await parseResponse(res);
+  return (data?.content ?? '') || '';
+}
+
+export async function updateAnnouncement(content) {
+  const res = await fetch(`${BASE_URL}/api/shop-orders/announcement`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', ...authHeaders() },
+    body: JSON.stringify({ content: content ?? '' }),
+  });
+  const data = await parseResponse(res);
+  return (data?.content ?? '') || '';
+}
+
+// ============================================================
 //  Management passcode (/management)
 // ============================================================
 

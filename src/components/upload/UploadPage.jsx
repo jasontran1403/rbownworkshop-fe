@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import Modal from '../common/Modal';
 import DragDropZone from './DragDropZone';
+import RichTextEditor from '../common/RichTextEditor';
 import { useDebounce } from '../../hooks/useDebounce';
 import { formatDate } from '../../utils/format';
 import {
@@ -11,6 +12,8 @@ import {
   managementSearchPaged,
   deleteOrder,
   updateOrder,
+  getAnnouncement,
+  updateAnnouncement,
 } from '../../api/shopOrderApi';
 
 const BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:9879';
@@ -89,6 +92,16 @@ function CheckIcon({ size = 22 }) {
     </svg>
   );
 }
+function MegaphoneIcon({ size = 22 }) {
+  return (
+    <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24"
+      fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M3 11v2a1 1 0 0 0 1 1h3l5 4V6L7 10H4a1 1 0 0 0-1 1z"/>
+      <path d="M17 8a5 5 0 0 1 0 8"/>
+      <path d="M20 5a9 9 0 0 1 0 14"/>
+    </svg>
+  );
+}
 function XIcon({ size = 22 }) {
   return (
     <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24"
@@ -149,7 +162,14 @@ export default function UploadPage() {
   const scrollRef = useRef(null);
   const [showBackToTop, setShowBackToTop] = useState(false);
 
-  useEffect(() => { loadNumbers(); }, []);
+  // Announcement
+  const [showAnnouncementModal, setShowAnnouncementModal] = useState(false);
+  const [announcement, setAnnouncement] = useState('');
+  const [announcementDraft, setAnnouncementDraft] = useState('');
+  const [savingAnnouncement, setSavingAnnouncement] = useState(false);
+  const [clearingAnnouncement, setClearingAnnouncement] = useState(false);
+
+  useEffect(() => { loadNumbers(); loadAnnouncement(); }, []);
   useEffect(() => {
     resetAndLoad();
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -164,6 +184,50 @@ export default function UploadPage() {
     if (pollRef.current) clearInterval(pollRef.current);
     if (tickRef.current) clearInterval(tickRef.current);
   }, []);
+
+  async function loadAnnouncement() {
+    try {
+      const html = await getAnnouncement();
+      setAnnouncement(html || '');
+      setAnnouncementDraft(html || '');
+    } catch (e) { /* noop */ }
+  }
+
+  function openAnnouncementModal() {
+    setAnnouncementDraft(announcement || '');
+    setShowAnnouncementModal(true);
+  }
+
+  async function handleSaveAnnouncement() {
+    setSavingAnnouncement(true);
+    try {
+      const saved = await updateAnnouncement(announcementDraft || '');
+      setAnnouncement(saved || '');
+      setAnnouncementDraft(saved || '');
+      showToast('success', saved ? 'Đã lưu thông báo' : 'Đã xóa thông báo');
+      setShowAnnouncementModal(false);
+    } catch (e) {
+      showToast('error', 'Lỗi: ' + (e.message || 'không rõ'));
+    } finally {
+      setSavingAnnouncement(false);
+    }
+  }
+
+  async function handleClearAnnouncement() {
+    if (!announcement) { setShowAnnouncementModal(false); return; }
+    setClearingAnnouncement(true);
+    try {
+      await updateAnnouncement('');
+      setAnnouncement('');
+      setAnnouncementDraft('');
+      showToast('success', 'Đã xóa thông báo (table trở lại full width)');
+      setShowAnnouncementModal(false);
+    } catch (e) {
+      showToast('error', 'Lỗi: ' + (e.message || 'không rõ'));
+    } finally {
+      setClearingAnnouncement(false);
+    }
+  }
 
   async function loadNumbers() {
     try {
@@ -601,6 +665,21 @@ export default function UploadPage() {
         </button>
       </div>
 
+      {/* Floating: announcement edit (bên trái, không đụng cụm nút bên phải) */}
+      <div className="fixed bottom-6 left-6 z-40">
+        <button
+          onClick={openAnnouncementModal}
+          title="Chỉnh sửa thông báo"
+          className={`relative flex h-14 w-14 items-center justify-center rounded-full text-white shadow-lg
+                     bg-gradient-to-br from-pink-500 to-rose-600 opacity-70 hover:opacity-100 hover:scale-110 hover:shadow-xl transition-all duration-200`}
+        >
+          <MegaphoneIcon size={22} />
+          {announcement && announcement.trim() ? (
+            <span className="absolute -top-1 -right-1 min-w-[18px] h-[18px] px-1 rounded-full bg-white text-rose-600 text-[10px] font-bold flex items-center justify-center border-2 border-rose-500 leading-none">●</span>
+          ) : null}
+        </button>
+      </div>
+
       {/* Floating: back to top */}
       <div className={`fixed bottom-[10.5rem] right-6 z-40 transition-all duration-300
         ${showBackToTop ? 'opacity-60 translate-y-0 pointer-events-auto' : 'opacity-0 translate-y-2 pointer-events-none'}`}>
@@ -862,6 +941,83 @@ export default function UploadPage() {
         {uploadError && (
           <div className="mt-4 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">{uploadError}</div>
         )}
+      </Modal>
+
+      {/* Modal thông báo — editor trái / preview phải trên md+, xếp dọc trên mobile */}
+      <Modal
+        open={showAnnouncementModal}
+        onClose={() => !(savingAnnouncement || clearingAnnouncement) && setShowAnnouncementModal(false)}
+        title="Thông báo (hiển thị bên trang tra cứu)"
+        maxWidth="max-w-6xl"
+      >
+        <div className="flex flex-col h-full min-h-0 gap-3">
+          <p className="text-xs text-slate-500 shrink-0">
+            Thông báo này sẽ hiển thị thành cột trái bên trang tra cứu đơn hàng (30% desktop, phía trên trên điện thoại).
+            Nội dung <b>rỗng</b> → không hiển thị thông báo, bảng tra cứu trở lại full width.
+          </p>
+
+          <div className="flex flex-col md:flex-row gap-3 flex-1 min-h-0">
+            {/* Cột trái: editor */}
+            <div className="flex-1 min-w-0 flex flex-col min-h-0">
+              <div className="text-xs font-medium text-slate-500 mb-1 shrink-0">Soạn thảo</div>
+              <div className="flex-1 min-h-0 overflow-auto">
+                <RichTextEditor
+                  value={announcementDraft}
+                  onChange={setAnnouncementDraft}
+                  placeholder="Nhập nội dung thông báo (có thể in đậm, in nghiêng, màu, bullet, canh lề...)"
+                  minHeight="320px"
+                />
+              </div>
+            </div>
+
+            {/* Cột phải: preview — mô phỏng khung thông báo bên trang tra cứu */}
+            <div className="flex-1 min-w-0 flex flex-col min-h-0">
+              <div className="text-xs font-medium text-slate-500 mb-1 shrink-0">Xem trước</div>
+              <div className="flex-1 min-h-0 rounded-lg border border-slate-200 bg-white overflow-hidden flex flex-col">
+                <div className="shrink-0 px-3 py-2 border-b border-slate-100 bg-gradient-to-r from-indigo-50 to-purple-50">
+                  <div className="text-sm font-semibold text-indigo-700 flex items-center gap-2">
+                    <span>📣</span> Thông báo
+                  </div>
+                </div>
+                <div
+                  className="announcement-content flex-1 min-h-0 overflow-auto p-3 text-sm text-slate-800"
+                  dangerouslySetInnerHTML={{ __html: announcementDraft || '<span class="text-slate-400">(trống)</span>' }}
+                />
+              </div>
+            </div>
+          </div>
+
+          <div className="flex flex-col-reverse sm:flex-row sm:justify-between sm:items-center gap-2 pt-1 shrink-0 border-t border-slate-100 -mx-5 px-5 pt-3">
+            <button
+              type="button"
+              onClick={handleClearAnnouncement}
+              disabled={savingAnnouncement || clearingAnnouncement || !announcement}
+              className="rounded-lg bg-red-600 hover:bg-red-700 px-4 py-2 text-sm text-white disabled:opacity-50"
+              title="Xóa hẳn thông báo (table sẽ trở lại full width)"
+            >
+              {clearingAnnouncement ? 'Đang xóa...' : 'Xóa thông báo'}
+            </button>
+
+            <div className="flex gap-2 justify-end">
+              <button
+                type="button"
+                onClick={() => setShowAnnouncementModal(false)}
+                disabled={savingAnnouncement || clearingAnnouncement}
+                className="rounded-lg border border-gray-300 px-4 py-2 text-sm hover:bg-gray-50 disabled:opacity-60"
+              >
+                Hủy
+              </button>
+              <button
+                type="button"
+                onClick={handleSaveAnnouncement}
+                disabled={savingAnnouncement || clearingAnnouncement}
+                className="rounded-lg bg-blue-600 hover:bg-blue-700 px-4 py-2 text-sm text-white disabled:opacity-60"
+              >
+                {savingAnnouncement ? 'Đang lưu...' : 'Lưu thông báo'}
+              </button>
+            </div>
+          </div>
+        </div>
       </Modal>
 
       {/* Modal edit — chỉ các field còn trong entity mới */}
