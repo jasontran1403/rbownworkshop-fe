@@ -176,7 +176,7 @@ export default function UploadPage() {
       const sb = b?.sheetSequence;
       const hasA = sa != null && sa !== '';
       const hasB = sb != null && sb !== '';
-      if (hasA && hasB) return Number(sa) - Number(sb);
+      if (hasA && hasB) return Number(sb) - Number(sa); // đổi chiều ở đây
       if (hasA) return -1;
       if (hasB) return 1;
       return 0;
