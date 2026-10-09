@@ -10,8 +10,6 @@ import {
   getProcessingNumbers,
   updateProcessingNumber,
   managementSearchPaged,
-  deleteOrder,
-  updateOrder,
   getAnnouncement,
   updateAnnouncement,
 } from '../../api/shopOrderApi';
@@ -52,17 +50,6 @@ function ArrowUpIcon({ size = 22 }) {
       fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
       <line x1="12" y1="19" x2="12" y2="5" />
       <polyline points="5 12 12 5 19 12" />
-    </svg>
-  );
-}
-function TrashIcon({ size = 22 }) {
-  return (
-    <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24"
-      fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <polyline points="3 6 5 6 21 6" />
-      <path d="M19 6l-2 14a2 2 0 0 1-2 2H9a2 2 0 0 1-2-2L5 6" />
-      <path d="M10 11v6" /><path d="M14 11v6" />
-      <path d="M9 6V4a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v2" />
     </svg>
   );
 }
@@ -125,8 +112,6 @@ export default function UploadPage() {
   const [showNumbersModal, setShowNumbersModal] = useState(false);
   const [showUploadModal, setShowUploadModal] = useState(false);
   const [showUploadConfirm, setShowUploadConfirm] = useState(false);
-  const [confirmDelete, setConfirmDelete] = useState(null);
-  const [deleting, setDeleting] = useState(false);
 
   // 3 numbers — editing drafts + saved values
   const [numbers, setNumbers] = useState({ superVip: null, vip: null, normal: null });
@@ -155,9 +140,7 @@ export default function UploadPage() {
   const [keyword, setKeyword] = useState('');
   const debouncedKeyword = useDebounce(keyword, 600);
   const [sheetFilter, setSheetFilter] = useState('NORMAL');
-  const [editRow, setEditRow] = useState(null);
 
-  const [selectedIds, setSelectedIds] = useState(() => new Set());
   const [toast, setToast] = useState(null);
   const scrollRef = useRef(null);
   const [showBackToTop, setShowBackToTop] = useState(false);
@@ -242,10 +225,10 @@ export default function UploadPage() {
   }
 
   async function resetAndLoad() {
-    setLoadingRows(true); setHasMore(true); setSelectedIds(new Set());
+    setLoadingRows(true); setHasMore(true);
     try {
       const data = await managementSearchPaged(debouncedKeyword, sheetFilter, 0, PAGE_SIZE);
-      const items = data?.items || [];   // BE đã sort sẵn
+      const items = data?.items || [];   // BE đã sort sẵn theo sheetSequence ASC
       setRows(items); setPage(0); setHasMore(!!data?.hasMore);
     } catch (e) {
       setRows([]); showToast('error', e.message || 'Lỗi tải dữ liệu');
@@ -259,7 +242,7 @@ export default function UploadPage() {
       const next = page + 1;
       const data = await managementSearchPaged(debouncedKeyword, sheetFilter, next, PAGE_SIZE);
       const items = data?.items || [];
-      setRows(prev => [...prev, ...items]);   // BE đã sort sẵn, không cần sort lại
+      setRows(prev => [...prev, ...items]);   // BE đã sort sẵn
       setPage(next); setHasMore(!!data?.hasMore);
     } catch (e) {
       showToast('error', e.message || 'Lỗi tải thêm dữ liệu');
@@ -459,52 +442,6 @@ export default function UploadPage() {
     return Math.max(0, task.estimatedMillis - elapsed);
   }
 
-  // ============ SELECT + DELETE ============
-  const allSelectedOnPage = rows.length > 0 && rows.every(r => selectedIds.has(r.id));
-  const someSelectedOnPage = rows.some(r => selectedIds.has(r.id));
-  function toggleOne(id) {
-    setSelectedIds(prev => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id); else next.add(id); return next;
-    });
-  }
-  function toggleAllOnPage() {
-    setSelectedIds(prev => {
-      const next = new Set(prev);
-      if (allSelectedOnPage) rows.forEach(r => next.delete(r.id));
-      else rows.forEach(r => next.add(r.id)); return next;
-    });
-  }
-  function askDeleteOne(row) { setConfirmDelete({ type: 'single', id: row.id, account: row.account }); }
-  function askDeleteBulk() {
-    if (selectedIds.size === 0) return;
-    setConfirmDelete({ type: 'bulk', ids: Array.from(selectedIds) });
-  }
-  async function doDelete() {
-    if (!confirmDelete) return;
-    setDeleting(true);
-    try {
-      if (confirmDelete.type === 'single') {
-        await deleteOrder(confirmDelete.id);
-        showToast('success', `Đã xóa đơn #${confirmDelete.id}`);
-      } else {
-        const results = await Promise.allSettled(confirmDelete.ids.map(id => deleteOrder(id)));
-        const ok = results.filter(r => r.status === 'fulfilled').length;
-        const fail = results.length - ok;
-        if (fail === 0) showToast('success', `Đã xóa ${ok} đơn`);
-        else showToast('error', `Xóa ${ok}/${results.length} đơn. Lỗi: ${fail} đơn`);
-      }
-      setConfirmDelete(null); setSelectedIds(new Set()); resetAndLoad();
-    } catch (e) { showToast('error', e.message || 'Xóa thất bại'); }
-    finally { setDeleting(false); }
-  }
-
-  async function handleSaveEdit() {
-    if (!editRow) return;
-    try { await updateOrder(editRow.id, editRow); setEditRow(null); resetAndLoad(); }
-    catch (e) { showToast('error', e.message); }
-  }
-
   function formatNumber(value) {
     if (value == null || value === '') return '—';
     const number = Number(value);
@@ -512,7 +449,6 @@ export default function UploadPage() {
     return `${Math.round(number).toLocaleString('vi-VN')} đ`;
   }
 
-  const selectedCount = selectedIds.size;
   const progress = computeProgress();
   const remainingMs = computeRemainingMs();
   const elapsedMs = task ? now - task.startedAt : 0;
@@ -533,7 +469,7 @@ export default function UploadPage() {
     <div className="h-screen w-full bg-gray-50 flex flex-col overflow-hidden">
       <div className="w-full px-4 sm:px-6 lg:px-8 pt-6 pb-3 shrink-0">
         <h1 className="text-2xl font-bold text-gray-800 mb-1">Quản lý đơn hàng</h1>
-        <p className="text-sm text-gray-500 mb-4">Tìm kiếm, cập nhật, xóa dữ liệu đã upload</p>
+        <p className="text-sm text-gray-500 mb-4">Tìm kiếm dữ liệu đã upload</p>
 
         <div className="rounded-xl border bg-white p-4 shadow-sm">
           <div className="flex flex-wrap gap-3 items-end">
@@ -560,12 +496,6 @@ export default function UploadPage() {
             <table className="min-w-full text-sm">
               <thead className="bg-gray-50 text-gray-600 sticky top-0 z-10">
                 <tr>
-                  <th className="px-3 py-2 text-center whitespace-nowrap w-10">
-                    <input type="checkbox" checked={allSelectedOnPage}
-                      ref={el => { if (el) el.indeterminate = !allSelectedOnPage && someSelectedOnPage; }}
-                      onChange={toggleAllOnPage}
-                      className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500 cursor-pointer" />
-                  </th>
                   <th className="px-3 py-2 text-left whitespace-nowrap">STT</th>
                   <th className="px-3 py-2 text-left whitespace-nowrap">Tài khoản</th>
                   <th className="px-3 py-2 text-left whitespace-nowrap">Gói DV</th>
@@ -577,79 +507,55 @@ export default function UploadPage() {
                   <th className="px-3 py-2 text-left whitespace-nowrap">Số ngày treo</th>
                   <th className="px-3 py-2 text-left whitespace-nowrap">TT Hoàn tiền</th>
                   <th className="px-3 py-2 text-left whitespace-nowrap">TT Đơn</th>
-                  <th className="px-3 py-2 text-right pr-28 whitespace-nowrap">Hành động</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100">
                 {loadingRows ? (
-                  <tr><td colSpan="13" className="px-3 py-6 text-center text-gray-500">Đang tải...</td></tr>
+                  <tr><td colSpan="11" className="px-3 py-6 text-center text-gray-500">Đang tải...</td></tr>
                 ) : rows.length === 0 ? (
-                  <tr><td colSpan="13" className="px-3 py-6 text-center text-gray-500">Không có dữ liệu</td></tr>
-                ) : rows.map((r) => {
-                  const checked = selectedIds.has(r.id);
-                  return (
-                    <tr key={r.id} className={`transition ${checked ? 'bg-blue-50 hover:bg-blue-100' : 'hover:bg-gray-50'}`}>
-                      <td className="px-3 py-2 text-center">
-                        <input type="checkbox" checked={checked} onChange={() => toggleOne(r.id)}
-                          className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500 cursor-pointer" />
-                      </td>
-                      <td className="px-3 py-2">
-                        <span className="inline-flex items-center rounded-md bg-blue-100 px-2 py-0.5 text-xs font-semibold text-blue-700">#{r.sheetSequence ?? '—'}</span>
-                      </td>
-                      <td className="px-3 py-2">
-                        {r.account ? (
-                          <button onClick={() => copyToClipboard(r.account, 'tài khoản')} title="Click để copy"
-                            className="text-left rounded px-1 -mx-1 py-0.5 hover:bg-blue-50 hover:text-blue-700 transition cursor-pointer">
-                            {r.account}
-                          </button>
-                        ) : '—'}
-                      </td>
-                      <td className="px-3 py-2">{r.servicePackage}</td>
-                      <td className="px-3 py-2 whitespace-nowrap">{formatNumber(r.servicePrice)}</td>
-                      <td className="px-3 py-2 whitespace-nowrap">
-                        {r.priorityRegister || '—'}
-                        {r.priorityFee ? <span className="text-xs text-gray-500 ml-1">({formatNumber(r.priorityFee)})</span> : null}
-                      </td>
-                      <td className="px-3 py-2 whitespace-nowrap">
-                        {r.regionRegister || '—'}
-                        {r.regionSelected ? <span className="text-xs text-gray-500 ml-1">({r.regionSelected})</span> : null}
-                      </td>
-                      <td className="px-3 py-2 whitespace-nowrap">
-                        {r.gameRegister || '—'}
-                        {r.gameSelected ? <span className="text-xs text-gray-500 ml-1">({r.gameSelected})</span> : null}
-                      </td>
-                      <td className="px-3 py-2 whitespace-nowrap">{formatDate(r.orderDate)}</td>
-                      <td className="px-3 py-2 text-center">{r.holdDays ?? '—'}</td>
-                      <td className="px-3 py-2">{r.refundNoteStatus || <span className="text-gray-400">—</span>}</td>
-                      <td className="px-3 py-2">{r.orderNoteStatus || <span className="text-gray-400">—</span>}</td>
-                      <td className="px-3 py-2 text-right pr-28 whitespace-nowrap">
-                        <button onClick={() => setEditRow({ ...r })}
-                          className="rounded bg-amber-500 px-2 py-1 text-xs text-white hover:bg-amber-600 mr-1">Sửa</button>
-                        <button onClick={() => askDeleteOne(r)}
-                          className="rounded bg-red-500 px-2 py-1 text-xs text-white hover:bg-red-600">Xóa</button>
-                      </td>
-                    </tr>
-                  );
-                })}
-                {loadingMore && (<tr><td colSpan="13" className="px-3 py-4 text-center text-gray-500 text-xs">Đang tải thêm...</td></tr>)}
-                {!hasMore && rows.length > 0 && !loadingRows && (<tr><td colSpan="13" className="px-3 py-4 text-center text-gray-400 text-xs">— Đã hết dữ liệu —</td></tr>)}
+                  <tr><td colSpan="11" className="px-3 py-6 text-center text-gray-500">Không có dữ liệu</td></tr>
+                ) : rows.map((r) => (
+                  <tr key={r.id} className="transition hover:bg-gray-50">
+                    <td className="px-3 py-2">
+                      <span className="inline-flex items-center rounded-md bg-blue-100 px-2 py-0.5 text-xs font-semibold text-blue-700">
+                        #{r.sheetSequence ?? '—'}
+                      </span>
+                    </td>
+                    <td className="px-3 py-2">
+                      {r.account ? (
+                        <button onClick={() => copyToClipboard(r.account, 'tài khoản')} title="Click để copy"
+                          className="text-left rounded px-1 -mx-1 py-0.5 hover:bg-blue-50 hover:text-blue-700 transition cursor-pointer">
+                          {r.account}
+                        </button>
+                      ) : '—'}
+                    </td>
+                    <td className="px-3 py-2">{r.servicePackage}</td>
+                    <td className="px-3 py-2 whitespace-nowrap">{formatNumber(r.servicePrice)}</td>
+                    <td className="px-3 py-2 whitespace-nowrap">
+                      {r.priorityRegister || '—'}
+                      {r.priorityFee ? <span className="text-xs text-gray-500 ml-1">({formatNumber(r.priorityFee)})</span> : null}
+                    </td>
+                    <td className="px-3 py-2 whitespace-nowrap">
+                      {r.regionRegister || '—'}
+                      {r.regionSelected ? <span className="text-xs text-gray-500 ml-1">({r.regionSelected})</span> : null}
+                    </td>
+                    <td className="px-3 py-2 whitespace-nowrap">
+                      {r.gameRegister || '—'}
+                      {r.gameSelected ? <span className="text-xs text-gray-500 ml-1">({r.gameSelected})</span> : null}
+                    </td>
+                    <td className="px-3 py-2 whitespace-nowrap">{formatDate(r.orderDate)}</td>
+                    <td className="px-3 py-2 text-center">{r.holdDays ?? '—'}</td>
+                    <td className="px-3 py-2">{r.refundNoteStatus || <span className="text-gray-400">—</span>}</td>
+                    <td className="px-3 py-2">{r.orderNoteStatus || <span className="text-gray-400">—</span>}</td>
+                  </tr>
+                ))}
+                {loadingMore && (<tr><td colSpan="11" className="px-3 py-4 text-center text-gray-500 text-xs">Đang tải thêm...</td></tr>)}
+                {!hasMore && rows.length > 0 && !loadingRows && (<tr><td colSpan="11" className="px-3 py-4 text-center text-gray-400 text-xs">— Đã hết dữ liệu —</td></tr>)}
               </tbody>
             </table>
           </div>
         </div>
       </div>
-
-      {/* Floating: bulk delete */}
-      {selectedCount > 0 && (
-        <div className={`fixed right-6 z-40 transition-all duration-300 ${showBackToTop ? 'bottom-[15rem]' : 'bottom-[10.5rem]'}`}>
-          <button onClick={askDeleteBulk} title={`Xóa ${selectedCount} đơn đã chọn`}
-            className="relative flex h-14 w-14 items-center justify-center rounded-full text-white shadow-lg
-                       bg-gradient-to-br from-red-500 to-rose-600 hover:scale-110 hover:shadow-xl transition-all duration-200">
-            <TrashIcon size={22} />
-            <span className="absolute -top-1 -right-1 min-w-[22px] h-[22px] px-1 rounded-full bg-white text-red-600 text-[11px] font-bold flex items-center justify-center border-2 border-red-500 leading-none">{selectedCount}</span>
-          </button>
-        </div>
-      )}
 
       {/* Floating: numbers */}
       <div className="fixed bottom-6 right-6 z-40">
@@ -834,33 +740,6 @@ export default function UploadPage() {
         </div>
       )}
 
-      {/* Modal xóa */}
-      <Modal open={!!confirmDelete} onClose={() => !deleting && setConfirmDelete(null)} title="Xác nhận xóa" maxWidth="max-w-md">
-        {confirmDelete && (
-          <div>
-            <div className="flex gap-3 items-start">
-              <div className="shrink-0 w-10 h-10 rounded-full bg-red-100 text-red-600 flex items-center justify-center">
-                <TrashIcon size={20} />
-              </div>
-              <div className="flex-1">
-                {confirmDelete.type === 'single' ? (
-                  <p className="text-sm text-gray-700">Bạn có chắc muốn xóa đơn <b>#{confirmDelete.id}</b>{confirmDelete.account ? <> của tài khoản <b>{confirmDelete.account}</b></> : null}?</p>
-                ) : (
-                  <p className="text-sm text-gray-700">Bạn có chắc muốn xóa <b>{confirmDelete.ids.length}</b> đơn đã chọn?</p>
-                )}
-                <p className="text-xs text-gray-500 mt-1">Thao tác này không thể hoàn tác.</p>
-              </div>
-            </div>
-            <div className="mt-5 flex justify-end gap-2">
-              <button onClick={() => setConfirmDelete(null)} disabled={deleting} className="rounded-lg border border-gray-300 px-4 py-2 text-sm hover:bg-gray-50 disabled:opacity-60">Hủy</button>
-              <button onClick={doDelete} disabled={deleting} className="rounded-lg bg-red-600 hover:bg-red-700 px-4 py-2 text-sm text-white disabled:opacity-60">
-                {deleting ? 'Đang xóa...' : 'Xóa'}
-              </button>
-            </div>
-          </div>
-        )}
-      </Modal>
-
       {/* Modal confirm upload */}
       <Modal open={showUploadConfirm} onClose={cancelUploadConfirm} title="Xác nhận upload" maxWidth="max-w-md">
         <div>
@@ -1022,43 +901,6 @@ export default function UploadPage() {
             </div>
           </div>
         </div>
-      </Modal>
-
-      {/* Modal edit — chỉ các field còn trong entity mới */}
-      <Modal open={!!editRow} onClose={() => setEditRow(null)} title={`Sửa đơn #${editRow?.id}`}>
-        {editRow && (
-          <div className="space-y-3 max-h-[70vh] overflow-y-auto pr-2">
-            {[
-              ['customerName', 'Tên khách'],
-              ['orderPlace', 'Chỗ order'],
-              ['servicePackage', 'Gói DV'],
-              ['account', 'Tài khoản'],
-              ['priorityRegister', 'Đăng ký ưu tiên (Có/Không)'],
-              ['priorityFee', 'Phí ưu tiên'],
-              ['regionRegister', 'Đăng ký chọn vùng (Có/Không)'],
-              ['regionSelected', 'Vùng chọn'],
-              ['gameRegister', 'Đăng ký chọn game (Có/Không)'],
-              ['gameSelected', 'Game chọn'],
-              ['servicePrice', 'Giá chốt'],
-              ['actualAmount', 'Thực nhận'],
-              ['orderDate', 'Ngày đặt (yyyy-MM-dd)'],
-              ['holdDays', 'Số ngày treo'],
-              ['refundNoteStatus', 'TT hoàn tiền'],
-              ['orderNoteStatus', 'TT đơn'],
-            ].map(([field, label]) => (
-              <div key={field}>
-                <label className="block text-xs font-medium text-gray-600 mb-1">{label}</label>
-                <input type="text" value={editRow[field] ?? ''}
-                  onChange={(e) => setEditRow({ ...editRow, [field]: e.target.value })}
-                  className="w-full rounded border border-gray-300 px-2 py-1.5 text-sm focus:border-blue-500 focus:outline-none" />
-              </div>
-            ))}
-            <div className="flex justify-end gap-2 pt-2">
-              <button onClick={() => setEditRow(null)} className="rounded-lg border px-4 py-2 text-sm hover:bg-gray-50">Hủy</button>
-              <button onClick={handleSaveEdit} className="rounded-lg bg-blue-600 px-4 py-2 text-sm text-white hover:bg-blue-700">Lưu</button>
-            </div>
-          </div>
-        )}
       </Modal>
     </div>
   );
