@@ -23,16 +23,16 @@ const TICK_INTERVAL_MS = 100;
 const ANIM_MS = 350;
 
 const SHEET_TYPES = [
-  { value: 'NORMAL',    label: 'Thường' },
-  { value: 'VIP',       label: 'Ưu tiên' },
+  { value: 'NORMAL', label: 'Thường' },
+  { value: 'VIP', label: 'Ưu tiên' },
   { value: 'SUPER_VIP', label: 'Ưu tiên VIP' },
 ];
 
 /** 3 loại processing number — thứ tự hiển thị trong UI. */
 const PROCESSING_TYPES = [
   { key: 'superVip', apiKey: 'SUPER_VIP', label: 'Ưu tiên VIP', color: 'bg-orange-500 hover:bg-orange-600' },
-  { key: 'vip',      apiKey: 'VIP',       label: 'Ưu tiên',     color: 'bg-yellow-500 hover:bg-yellow-600' },
-  { key: 'normal',   apiKey: 'NORMAL',    label: 'Thường',      color: 'bg-blue-500  hover:bg-blue-600'   },
+  { key: 'vip', apiKey: 'VIP', label: 'Ưu tiên', color: 'bg-yellow-500 hover:bg-yellow-600' },
+  { key: 'normal', apiKey: 'NORMAL', label: 'Thường', color: 'bg-blue-500  hover:bg-blue-600' },
 ];
 
 // ===================== ICONS =====================
@@ -96,9 +96,9 @@ function MegaphoneIcon({ size = 22 }) {
   return (
     <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24"
       fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M3 11v2a1 1 0 0 0 1 1h3l5 4V6L7 10H4a1 1 0 0 0-1 1z"/>
-      <path d="M17 8a5 5 0 0 1 0 8"/>
-      <path d="M20 5a9 9 0 0 1 0 14"/>
+      <path d="M3 11v2a1 1 0 0 0 1 1h3l5 4V6L7 10H4a1 1 0 0 0-1 1z" />
+      <path d="M17 8a5 5 0 0 1 0 8" />
+      <path d="M20 5a9 9 0 0 1 0 14" />
     </svg>
   );
 }
@@ -169,6 +169,20 @@ export default function UploadPage() {
   const [savingAnnouncement, setSavingAnnouncement] = useState(false);
   const [clearingAnnouncement, setClearingAnnouncement] = useState(false);
 
+  function sortBySheetSequence(items) {
+    if (!Array.isArray(items)) return [];
+    return [...items].sort((a, b) => {
+      const sa = a?.sheetSequence;
+      const sb = b?.sheetSequence;
+      const hasA = sa != null && sa !== '';
+      const hasB = sb != null && sb !== '';
+      if (hasA && hasB) return Number(sa) - Number(sb);
+      if (hasA) return -1;
+      if (hasB) return 1;
+      return 0;
+    });
+  }
+
   useEffect(() => { loadNumbers(); loadAnnouncement(); }, []);
   useEffect(() => {
     resetAndLoad();
@@ -235,8 +249,8 @@ export default function UploadPage() {
       setNumbers(n);
       setDraftNumbers({
         superVip: n.superVip == null ? '' : String(n.superVip),
-        vip:      n.vip      == null ? '' : String(n.vip),
-        normal:   n.normal   == null ? '' : String(n.normal),
+        vip: n.vip == null ? '' : String(n.vip),
+        normal: n.normal == null ? '' : String(n.normal),
       });
     } catch (e) { /* noop */ }
   }
@@ -245,7 +259,7 @@ export default function UploadPage() {
     setLoadingRows(true); setHasMore(true); setSelectedIds(new Set());
     try {
       const data = await managementSearchPaged(debouncedKeyword, sheetFilter, 0, PAGE_SIZE);
-      const items = data?.items || [];
+      const items = sortBySheetSequence(data?.items || []);
       setRows(items); setPage(0); setHasMore(!!data?.hasMore);
     } catch (e) {
       setRows([]); showToast('error', e.message || 'Lỗi tải dữ liệu');
@@ -259,7 +273,7 @@ export default function UploadPage() {
       const next = page + 1;
       const data = await managementSearchPaged(debouncedKeyword, sheetFilter, next, PAGE_SIZE);
       const items = data?.items || [];
-      setRows(prev => [...prev, ...items]);
+      setRows(prev => sortBySheetSequence([...prev, ...items])); // sort lại toàn bộ
       setPage(next); setHasMore(!!data?.hasMore);
     } catch (e) {
       showToast('error', e.message || 'Lỗi tải thêm dữ liệu');
@@ -303,8 +317,8 @@ export default function UploadPage() {
       setNumbers(updated);
       setDraftNumbers({
         superVip: updated.superVip == null ? '' : String(updated.superVip),
-        vip:      updated.vip      == null ? '' : String(updated.vip),
-        normal:   updated.normal   == null ? '' : String(updated.normal),
+        vip: updated.vip == null ? '' : String(updated.vip),
+        normal: updated.normal == null ? '' : String(updated.normal),
       });
       showToast('success', `Đã lưu số ${typeDef.label}`);
     } catch (e) { showToast('error', 'Lỗi: ' + e.message); }
@@ -321,8 +335,8 @@ export default function UploadPage() {
       setNumbers(updated);
       setDraftNumbers({
         superVip: updated.superVip == null ? '' : String(updated.superVip),
-        vip:      updated.vip      == null ? '' : String(updated.vip),
-        normal:   updated.normal   == null ? '' : String(updated.normal),
+        vip: updated.vip == null ? '' : String(updated.vip),
+        normal: updated.normal == null ? '' : String(updated.normal),
       });
       showToast('success', `Đã cập nhật ${typeDef.label} lên ${updated[typeDef.key] ?? next}`);
     } catch (e) { showToast('error', 'Lỗi: ' + e.message); }
@@ -463,13 +477,17 @@ export default function UploadPage() {
   const allSelectedOnPage = rows.length > 0 && rows.every(r => selectedIds.has(r.id));
   const someSelectedOnPage = rows.some(r => selectedIds.has(r.id));
   function toggleOne(id) {
-    setSelectedIds(prev => { const next = new Set(prev);
-      if (next.has(id)) next.delete(id); else next.add(id); return next; });
+    setSelectedIds(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id); return next;
+    });
   }
   function toggleAllOnPage() {
-    setSelectedIds(prev => { const next = new Set(prev);
+    setSelectedIds(prev => {
+      const next = new Set(prev);
       if (allSelectedOnPage) rows.forEach(r => next.delete(r.id));
-      else rows.forEach(r => next.add(r.id)); return next; });
+      else rows.forEach(r => next.add(r.id)); return next;
+    });
   }
   function askDeleteOne(row) { setConfirmDelete({ type: 'single', id: row.id, account: row.account }); }
   function askDeleteBulk() {
@@ -699,15 +717,15 @@ export default function UploadPage() {
           className={`fixed top-6 right-6 z-40 flex items-center gap-3 rounded-full px-4 py-2.5 text-white shadow-lg
                       transition-all ease-out
                       ${isDone ? 'bg-gradient-to-br from-green-500 to-emerald-600'
-                        : isError ? 'bg-gradient-to-br from-red-500 to-rose-600'
-                        : 'bg-gradient-to-br from-blue-500 to-indigo-600'}
+              : isError ? 'bg-gradient-to-br from-red-500 to-rose-600'
+                : 'bg-gradient-to-br from-blue-500 to-indigo-600'}
                       ${pillShown ? 'opacity-100 scale-100 translate-x-0 translate-y-0' : 'opacity-0 scale-0'}
                     `}
         >
           {isDone ? <CheckIcon size={18} /> : isError ? <XIcon size={18} /> : (
             <svg className="animate-spin w-5 h-5" viewBox="0 0 24 24" fill="none">
-              <circle cx="12" cy="12" r="10" stroke="currentColor" strokeOpacity="0.3" strokeWidth="3"/>
-              <path d="M12 2 A10 10 0 0 1 22 12" stroke="currentColor" strokeWidth="3" strokeLinecap="round"/>
+              <circle cx="12" cy="12" r="10" stroke="currentColor" strokeOpacity="0.3" strokeWidth="3" />
+              <path d="M12 2 A10 10 0 0 1 22 12" stroke="currentColor" strokeWidth="3" strokeLinecap="round" />
             </svg>
           )}
           <span className="text-sm font-semibold">
