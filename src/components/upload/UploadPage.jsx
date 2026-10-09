@@ -145,12 +145,15 @@ export default function UploadPage() {
   const scrollRef = useRef(null);
   const [showBackToTop, setShowBackToTop] = useState(false);
 
+  const announcementEditorRef = useRef(null);
+
   // Announcement
   const [showAnnouncementModal, setShowAnnouncementModal] = useState(false);
   const [announcement, setAnnouncement] = useState('');
   const [announcementDraft, setAnnouncementDraft] = useState('');
   const [savingAnnouncement, setSavingAnnouncement] = useState(false);
   const [clearingAnnouncement, setClearingAnnouncement] = useState(false);
+  const [toolbarHost, setToolbarHost] = useState(null);
 
   useEffect(() => { loadNumbers(); loadAnnouncement(); }, []);
   useEffect(() => {
@@ -184,7 +187,14 @@ export default function UploadPage() {
   async function handleSaveAnnouncement() {
     setSavingAnnouncement(true);
     try {
-      const saved = await updateAnnouncement(announcementDraft || '');
+      // 1. Upload tất cả ảnh pending trong editor → thay blob URL bằng URL server
+      let finalHtml = announcementDraft || '';
+      if (announcementEditorRef.current?.flushUploads) {
+        finalHtml = await announcementEditorRef.current.flushUploads();
+      }
+
+      // 2. Lưu HTML cuối cùng
+      const saved = await updateAnnouncement(finalHtml);
       setAnnouncement(saved || '');
       setAnnouncementDraft(saved || '');
       showToast('success', saved ? 'Đã lưu thông báo' : 'Đã xóa thông báo');
@@ -833,27 +843,41 @@ export default function UploadPage() {
         title="Thông báo (hiển thị bên trang tra cứu)"
         maxWidth="max-w-6xl"
       >
-        <div className="flex flex-col h-full min-h-0 gap-3">
-          <p className="text-xs text-slate-500 shrink-0">
-            Thông báo này sẽ hiển thị thành cột trái bên trang tra cứu đơn hàng (30% desktop, phía trên trên điện thoại).
-            Nội dung <b>rỗng</b> → không hiển thị thông báo, bảng tra cứu trở lại full width.
+        <div className="flex flex-col h-full min-h-0">
+          {/* Note đầu — fix cứng, không scroll */}
+          <p className="text-xs text-slate-500 shrink-0 pb-2">
+            Thông báo này sẽ hiển thị thành cột trái bên trang tra cứu đơn hàng
+            (30% desktop, phía trên trên điện thoại). Nội dung <b>rỗng</b> → không
+            hiển thị thông báo, bảng tra cứu trở lại full width.
           </p>
 
+          {/*
+            TOOLBAR editor — fix dưới title modal, full width.
+            RichTextEditor sẽ portal toolbar vào div này nhờ prop toolbarPortal.
+          */}
+          <div
+            ref={setToolbarHost}
+            className="sticky top-0 z-20 shrink-0 rounded-md border border-slate-200 overflow-hidden mb-2 bg-white"
+          />
+
+          {/* 2 cột soạn / xem trước — mỗi cột tự scroll bên trong */}
           <div className="flex flex-col md:flex-row gap-3 flex-1 min-h-0">
             {/* Cột trái: editor */}
             <div className="flex-1 min-w-0 flex flex-col min-h-0">
               <div className="text-xs font-medium text-slate-500 mb-1 shrink-0">Soạn thảo</div>
-              <div className="flex-1 min-h-0 overflow-auto">
+              <div className="flex-1 min-h-0">
                 <RichTextEditor
+                  ref={announcementEditorRef}
                   value={announcementDraft}
                   onChange={setAnnouncementDraft}
-                  placeholder="Nhập nội dung thông báo (có thể in đậm, in nghiêng, màu, bullet, canh lề...)"
-                  minHeight="320px"
+                  placeholder="Nhập nội dung thông báo..."
+                  fillHeight
+                  toolbarPortal={toolbarHost}
                 />
               </div>
             </div>
 
-            {/* Cột phải: preview — mô phỏng khung thông báo bên trang tra cứu */}
+            {/* Cột phải: preview */}
             <div className="flex-1 min-w-0 flex flex-col min-h-0">
               <div className="text-xs font-medium text-slate-500 mb-1 shrink-0">Xem trước</div>
               <div className="flex-1 min-h-0 rounded-lg border border-slate-200 bg-white overflow-hidden flex flex-col">
@@ -864,13 +888,16 @@ export default function UploadPage() {
                 </div>
                 <div
                   className="announcement-content flex-1 min-h-0 overflow-auto p-3 text-sm text-slate-800"
-                  dangerouslySetInnerHTML={{ __html: announcementDraft || '<span class="text-slate-400">(trống)</span>' }}
+                  dangerouslySetInnerHTML={{
+                    __html: announcementDraft || '<span class="text-slate-400">(trống)</span>',
+                  }}
                 />
               </div>
             </div>
           </div>
 
-          <div className="flex flex-col-reverse sm:flex-row sm:justify-between sm:items-center gap-2 pt-1 shrink-0 border-t border-slate-100 -mx-5 px-5 pt-3">
+          {/* Thanh nút cuối — sticky đáy modal body, không scroll */}
+          <div className="sticky bottom-0 shrink-0 flex flex-col-reverse sm:flex-row sm:justify-between sm:items-center gap-2 pt-3 mt-3 border-t border-slate-200 bg-white z-10">
             <button
               type="button"
               onClick={handleClearAnnouncement}

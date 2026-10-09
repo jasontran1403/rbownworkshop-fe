@@ -67,3 +67,18 @@
 .prose b, .prose strong { font-weight: 700; }
 .prose i, .prose em     { font-style: italic; }
 .prose u { text-decoration: underline; }
+
+.announcement-content img {
+  display: block;
+  max-width: 100%;
+  max-height: 90dvh;      /* fit chiều cao viewport, không "ăn" cả màn hình */
+  width: auto;
+  height: auto;
+  margin: 0.5rem 0;
+  border-radius: 6px;
+  cursor: zoom-in;
+  transition: transform 0.15s ease;
+}
+.announcement-content img:hover {
+  transform: scale(1.01);
+}

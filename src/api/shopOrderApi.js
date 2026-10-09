@@ -194,3 +194,15 @@ export async function deleteOrder(id) {
     throw new Error(body?.message || 'Xóa thất bại');
   }
 }
+
+export async function uploadImage(file) {
+  const formData = new FormData();
+  formData.append('file', file);
+  const res = await fetch(`${BASE_URL}/api/shop-orders/images`, {
+    method: 'POST',
+    headers: { ...authHeaders() }, // KHÔNG set Content-Type
+    body: formData,
+  });
+  const data = await parseResponse(res);
+  return data?.url;
+}

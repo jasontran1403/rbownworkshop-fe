@@ -1,9 +1,10 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import SearchInput from './SearchInput';
 import OrderTable from './OrderTable';
 import OrderCard from './OrderCard';
 import { useDebounce } from '../../hooks/useDebounce';
+import ImageLightbox from '../common/ImageLightbox';
 import {
   searchOrders,
   getProcessingNumbers,
@@ -36,18 +37,41 @@ function AdSlot({ label }) {
 
 /** Panel thông báo (HTML), scroll trong nội bộ. */
 function AnnouncementPanel({ html }) {
+  const containerRef = useRef(null);
+  const [zoomSrc, setZoomSrc] = useState(null);
+
+  // Delegate click: nếu click vào <img> → mở lightbox
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el) return;
+    function onClick(e) {
+      const t = e.target;
+      if (t && t.tagName === 'IMG' && t.src) {
+        e.preventDefault();
+        setZoomSrc(t.src);
+      }
+    }
+    el.addEventListener('click', onClick);
+    return () => el.removeEventListener('click', onClick);
+  }, [html]);
+
   return (
-    <div className="h-full rounded-2xl bg-white shadow-sm border border-slate-200 flex flex-col overflow-hidden">
-      <div className="shrink-0 px-4 py-3 border-b border-slate-100 bg-gradient-to-r from-indigo-50 to-purple-50">
-        <h2 className="text-sm sm:text-base font-semibold text-indigo-700 flex items-center gap-2">
-          <span>📣</span> Thông báo
-        </h2>
+    <>
+      <div className="h-full rounded-2xl bg-white shadow-sm border border-slate-200 flex flex-col overflow-hidden">
+        <div className="shrink-0 px-4 py-3 border-b border-slate-100 bg-gradient-to-r from-indigo-50 to-purple-50">
+          <h2 className="text-sm sm:text-base font-semibold text-indigo-700 flex items-center gap-2">
+            <span>📣</span> Thông báo
+          </h2>
+        </div>
+        <div
+          ref={containerRef}
+          className="announcement-content flex-1 min-h-0 overflow-auto p-4 text-sm text-slate-800"
+          dangerouslySetInnerHTML={{ __html: html }}
+        />
       </div>
-      <div
-        className="announcement-content flex-1 min-h-0 overflow-auto p-4 text-sm text-slate-800"
-        dangerouslySetInnerHTML={{ __html: html }}
-      />
-    </div>
+
+      <ImageLightbox src={zoomSrc} onClose={() => setZoomSrc(null)} />
+    </>
   );
 }
 
