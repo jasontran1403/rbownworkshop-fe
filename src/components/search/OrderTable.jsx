@@ -1,18 +1,17 @@
 import { formatVnd, formatDate } from '../../utils/format';
 import { PackageBadge } from './StatusBadge';
 
-/**
- * Các cột hiển thị khi tra cứu, theo yêu cầu:
- *   STT
- *   Tên gói / Giá
- *   Đăng ký ưu tiên / Phí ưu tiên
- *   Đăng ký chọn vùng / Vùng Chọn
- *   Đăng Ký Chọn Game / Game Chọn
- *   Ngày Đăng Ký
- *   Số Ngày Treo
- *   TT Hoàn Tiền
- *   TT Đơn
- */
+const TYPE_LABEL = {
+  SUPER_VIP: 'Ưu tiên VIP',
+  VIP:       'Ưu tiên',
+  NORMAL:    'Khách Order',
+};
+
+function sttTitle(sheetType) {
+  const t = TYPE_LABEL[sheetType];
+  return t ? `STT trong loại ${t}` : 'STT';
+}
+
 export default function OrderTable({ orders, currentProcessingNumber }) {
   const current = Number(currentProcessingNumber);
 
@@ -54,7 +53,6 @@ export default function OrderTable({ orders, currentProcessingNumber }) {
         </thead>
         <tbody className="divide-y divide-gray-100">
           {orders.map((o, i) => {
-            // "Hoàn thành" dựa vào orderNoteStatus
             const noteLower = (o.orderNoteStatus || '').toLowerCase();
             const isDone = noteLower.includes('hoàn thành') || noteLower.includes('hoan thanh');
             const seq = o.sheetSequence;
@@ -71,12 +69,18 @@ export default function OrderTable({ orders, currentProcessingNumber }) {
                   ${isProcessing ? 'ring-2 ring-blue-400 ring-inset animate-pulse-border' : ''}
                 `}
               >
-                {/* STT = sheetSequence (dùng chung giữa 3 loại) */}
-                <td className="px-4 py-3 font-medium align-top">
-                  <span className="font-semibold text-gray-800">{seq ?? '—'}</span>
+                {/* STT = sheetSequence RIÊNG theo loại */}
+                <td className="px-4 py-3 font-medium align-top" title={sttTitle(o.sheetType)}>
+                  <div className="leading-tight">
+                    <span className="font-semibold text-gray-800">#{seq ?? '—'}</span>
+                    {o.sheetType && (
+                      <div className="text-[10px] text-gray-500 mt-0.5">
+                        {TYPE_LABEL[o.sheetType] || o.sheetType}
+                      </div>
+                    )}
+                  </div>
                 </td>
 
-                {/* Gói DV + Giá */}
                 <td className="px-4 py-3 align-top">
                   <div className="leading-tight">
                     <div>
@@ -88,7 +92,6 @@ export default function OrderTable({ orders, currentProcessingNumber }) {
                   </div>
                 </td>
 
-                {/* Đăng ký ưu tiên + Phí ưu tiên */}
                 <td className="px-4 py-3 align-top">
                   <div className="leading-tight">
                     <div>
@@ -102,7 +105,6 @@ export default function OrderTable({ orders, currentProcessingNumber }) {
                   </div>
                 </td>
 
-                {/* Đăng ký chọn vùng + Vùng chọn */}
                 <td className="px-4 py-3 align-top">
                   <div className="leading-tight">
                     <div>
@@ -116,7 +118,6 @@ export default function OrderTable({ orders, currentProcessingNumber }) {
                   </div>
                 </td>
 
-                {/* Đăng ký chọn game + Game chọn */}
                 <td className="px-4 py-3 align-top">
                   <div className="leading-tight">
                     <div>

@@ -1,26 +1,46 @@
 import { formatVnd, formatDate } from '../../utils/format';
 import { PackageBadge } from './StatusBadge';
 
+const TYPE_LABEL = {
+  SUPER_VIP: 'Ưu tiên VIP',
+  VIP:       'Ưu tiên',
+  NORMAL:    'Khách Order',
+};
+
 export default function OrderCard({ order, currentProcessingNumber }) {
   const noteLower = (order.orderNoteStatus || '').toLowerCase();
   const isDone = noteLower.includes('hoàn thành') || noteLower.includes('hoan thanh');
   const seq = order.sheetSequence;
-  const isProcessing = Number(currentProcessingNumber) && seq != null && seq === Number(currentProcessingNumber);
+  const isProcessing =
+    Number(currentProcessingNumber) &&
+    seq != null &&
+    seq === Number(currentProcessingNumber);
 
   let cardBg = 'bg-gray-50 border-gray-200';
   if (isDone) cardBg = 'bg-green-50 border-green-200';
   else if (isProcessing) cardBg = 'bg-blue-50 border-blue-300';
 
+  const typeLabel = TYPE_LABEL[order.sheetType] || order.sheetType || '';
+
   return (
-    <div className={`rounded-xl border p-4 shadow-sm ${cardBg}
-      ${isProcessing ? 'ring-2 ring-blue-400 animate-pulse-border' : ''}`}>
+    <div
+      className={`rounded-xl border p-4 shadow-sm ${cardBg}
+        ${isProcessing ? 'ring-2 ring-blue-400 animate-pulse-border' : ''}`}
+    >
       <div className="flex items-center justify-between mb-2">
         <span className="text-sm text-gray-500">
           STT <b className="text-gray-800">#{seq ?? '—'}</b>
+          {typeLabel && (
+            <span className="ml-1.5 text-[11px] text-gray-500">
+              ({typeLabel})
+            </span>
+          )}
         </span>
-        <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${
-          isDone ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-700'
-        }`}>
+        <span
+          className={`rounded-full px-2 py-0.5 text-xs font-medium ${
+            isDone ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-700'
+          }`}
+        >
           {order.orderNoteStatus || '—'}
         </span>
       </div>
