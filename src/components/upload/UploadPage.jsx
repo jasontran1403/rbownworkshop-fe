@@ -857,7 +857,7 @@ export default function UploadPage() {
           */}
           <div
             ref={setToolbarHost}
-            className="sticky top-0 z-20 shrink-0 rounded-md border border-slate-200 overflow-hidden mb-2 bg-white"
+            className="sticky top-0 z-20 shrink-0 rounded-md border border-slate-200 mb-2 bg-white"
           />
 
           {/* 2 cột soạn / xem trước — mỗi cột tự scroll bên trong */}

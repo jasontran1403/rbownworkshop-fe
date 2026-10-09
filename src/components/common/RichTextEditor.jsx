@@ -41,13 +41,17 @@ const RichTextEditor = forwardRef(function RichTextEditor({
 }, ref) {
   const editorRef = useRef(null);
   const fileInputRef = useRef(null);
+  const colorBtnRef = useRef(null);
+  const colorPopupRef = useRef(null);
+
   const [showColor, setShowColor] = useState(false);
+  const [colorPos, setColorPos] = useState({ top: 0, left: 0 });
   const [isEmpty, setIsEmpty] = useState(!value);
   const [uploading, setUploading] = useState(false);
 
-  // State cho confirm modal xoá ảnh
-  const [confirmImg, setConfirmImg] = useState(null);  // <img> element chờ xác nhận xoá
-  const [confirmPreview, setConfirmPreview] = useState(''); // src ảnh để preview trong confirm
+  // Confirm xoá ảnh
+  const [confirmImg, setConfirmImg] = useState(null);
+  const [confirmPreview, setConfirmPreview] = useState('');
 
   const pendingFilesRef = useRef(new Map());
   const createdBlobsRef = useRef(new Set());
@@ -74,13 +78,35 @@ const RichTextEditor = forwardRef(function RichTextEditor({
     pendingFilesRef.current.clear();
   }, []);
 
-  // Esc để đóng confirm
+  // Esc tắt confirm xoá ảnh
   useEffect(() => {
     if (!confirmImg) return;
     function onKey(e) { if (e.key === 'Escape') cancelDeleteImg(); }
     document.addEventListener('keydown', onKey);
     return () => document.removeEventListener('keydown', onKey);
   }, [confirmImg]);
+
+  // Đóng color picker khi scroll/resize/click ngoài
+  useEffect(() => {
+    if (!showColor) return;
+    function close() { setShowColor(false); }
+    function onDocDown(e) {
+      if (colorBtnRef.current?.contains(e.target)) return;
+      if (colorPopupRef.current?.contains(e.target)) return;
+      close();
+    }
+    function onKey(e) { if (e.key === 'Escape') close(); }
+    window.addEventListener('scroll', close, true);
+    window.addEventListener('resize', close);
+    document.addEventListener('mousedown', onDocDown);
+    document.addEventListener('keydown', onKey);
+    return () => {
+      window.removeEventListener('scroll', close, true);
+      window.removeEventListener('resize', close);
+      document.removeEventListener('mousedown', onDocDown);
+      document.removeEventListener('keydown', onKey);
+    };
+  }, [showColor]);
 
   function emit() {
     if (!onChange) return;
@@ -110,7 +136,24 @@ const RichTextEditor = forwardRef(function RichTextEditor({
     if (!v) return;
     exec('fontSize', v);
   }
+
+  function toggleColor() {
+    setShowColor((v) => {
+      const next = !v;
+      if (next && colorBtnRef.current) {
+        const r = colorBtnRef.current.getBoundingClientRect();
+        const popupW = 230;
+        let left = r.left;
+        if (left + popupW > window.innerWidth - 8) left = window.innerWidth - popupW - 8;
+        if (left < 8) left = 8;
+        setColorPos({ top: r.bottom + 4, left });
+      }
+      return next;
+    });
+  }
+
   function pickColor(c) { setShowColor(false); exec('foreColor', c); }
+
   function clearFormat() {
     focusEditor();
     try {
@@ -222,10 +265,11 @@ const RichTextEditor = forwardRef(function RichTextEditor({
     hasPending: () => (editorRef.current?.querySelectorAll('img[data-pending="true"]').length || 0) > 0,
   }), []);
 
-  function Btn({ title, onClick, children, active, disabled }) {
+  function Btn({ title, onClick, children, active, disabled, btnRef }) {
     return (
       <button
         type="button"
+        ref={btnRef}
         title={title}
         disabled={disabled}
         onMouseDown={(e) => e.preventDefault()}
@@ -260,31 +304,12 @@ const RichTextEditor = forwardRef(function RichTextEditor({
 
       <div className="w-px bg-slate-200 mx-0.5" />
 
-      <div className="relative">
-        <Btn title="Màu chữ" onClick={() => setShowColor((v) => !v)}>
-          <span className="inline-flex items-center gap-1">
-            <span>A</span>
-            <span className="w-3 h-3 rounded" style={{ background: 'linear-gradient(90deg,#ef4444,#3b82f6)' }} />
-          </span>
-        </Btn>
-        {showColor && (
-          <div className="absolute z-20 top-9 left-0 bg-white border border-slate-200 rounded-md shadow-lg p-2 grid grid-cols-8 gap-1">
-            {PRESET_COLORS.map((c) => (
-              <button type="button" key={c}
-                onMouseDown={(e) => e.preventDefault()}
-                onClick={() => pickColor(c)}
-                title={c}
-                className="w-5 h-5 rounded border border-slate-300 hover:scale-110 transition"
-                style={{ background: c }} />
-            ))}
-            <label className="col-span-8 mt-1 text-[10px] text-slate-500 flex items-center gap-1">
-              Khác:
-              <input type="color" onChange={(e) => pickColor(e.target.value)}
-                className="h-5 w-6 cursor-pointer border rounded" />
-            </label>
-          </div>
-        )}
-      </div>
+      <Btn btnRef={colorBtnRef} title="Màu chữ" onClick={toggleColor}>
+        <span className="inline-flex items-center gap-1">
+          <span>A</span>
+          <span className="w-3 h-3 rounded" style={{ background: 'linear-gradient(90deg,#ef4444,#3b82f6)' }} />
+        </span>
+      </Btn>
 
       <div className="w-px bg-slate-200 mx-0.5" />
 
@@ -316,12 +341,42 @@ const RichTextEditor = forwardRef(function RichTextEditor({
     </div>
   );
 
-  // Confirm modal — portal ra body để nổi trên modal cha
+  // Color picker — PORTAL ra body để không bị overflow clip
+  const colorPicker = showColor ? createPortal(
+    <div
+      ref={colorPopupRef}
+      className="fixed z-[9999] bg-white border border-slate-200 rounded-md shadow-lg p-2 grid grid-cols-8 gap-1"
+      style={{ top: colorPos.top, left: colorPos.left, width: 230 }}
+      onMouseDown={(e) => e.preventDefault()}
+    >
+      {PRESET_COLORS.map((c) => (
+        <button
+          type="button"
+          key={c}
+          onMouseDown={(e) => e.preventDefault()}
+          onClick={() => pickColor(c)}
+          title={c}
+          className="w-5 h-5 rounded border border-slate-300 hover:scale-110 transition"
+          style={{ background: c }}
+        />
+      ))}
+      <label className="col-span-8 mt-1 text-[10px] text-slate-500 flex items-center gap-1">
+        Khác:
+        <input
+          type="color"
+          onChange={(e) => pickColor(e.target.value)}
+          className="h-5 w-6 cursor-pointer border rounded"
+        />
+      </label>
+    </div>,
+    document.body
+  ) : null;
+
+  // Confirm xoá ảnh — PORTAL ra body
   const confirmModal = confirmImg ? createPortal(
     <div
       className="fixed inset-0 z-[10000] flex items-center justify-center bg-black/60 backdrop-blur-sm"
-      role="dialog"
-      aria-modal="true"
+      role="dialog" aria-modal="true"
       onClick={cancelDeleteImg}
     >
       <div
@@ -351,17 +406,13 @@ const RichTextEditor = forwardRef(function RichTextEditor({
             type="button"
             onClick={cancelDeleteImg}
             className="rounded-lg border border-gray-300 px-4 py-2 text-sm hover:bg-gray-50"
-          >
-            Hủy
-          </button>
+          >Hủy</button>
           <button
             type="button"
             onClick={confirmDeleteImg}
             autoFocus
             className="rounded-lg bg-red-600 hover:bg-red-700 px-4 py-2 text-sm text-white"
-          >
-            Xóa ảnh
-          </button>
+          >Xóa ảnh</button>
         </div>
       </div>
     </div>,
@@ -396,6 +447,7 @@ const RichTextEditor = forwardRef(function RichTextEditor({
         />
       </div>
 
+      {colorPicker}
       {confirmModal}
     </div>
   );
