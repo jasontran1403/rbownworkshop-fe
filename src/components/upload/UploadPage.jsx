@@ -17,7 +17,7 @@ import {
 } from '../../api/shopOrderApi';
 
 const BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:9879';
-const PAGE_SIZE = 100;
+const PAGE_SIZE = 1000;
 const POLL_INTERVAL_MS = 800;
 const TICK_INTERVAL_MS = 100;
 const ANIM_MS = 350;
@@ -169,20 +169,6 @@ export default function UploadPage() {
   const [savingAnnouncement, setSavingAnnouncement] = useState(false);
   const [clearingAnnouncement, setClearingAnnouncement] = useState(false);
 
-  function sortBySheetSequence(items) {
-    if (!Array.isArray(items)) return [];
-    return [...items].sort((a, b) => {
-      const sa = a?.sheetSequence;
-      const sb = b?.sheetSequence;
-      const hasA = sa != null && sa !== '';
-      const hasB = sb != null && sb !== '';
-      if (hasA && hasB) return Number(sb) - Number(sa); // đổi chiều ở đây
-      if (hasA) return -1;
-      if (hasB) return 1;
-      return 0;
-    });
-  }
-
   useEffect(() => { loadNumbers(); loadAnnouncement(); }, []);
   useEffect(() => {
     resetAndLoad();
@@ -259,7 +245,7 @@ export default function UploadPage() {
     setLoadingRows(true); setHasMore(true); setSelectedIds(new Set());
     try {
       const data = await managementSearchPaged(debouncedKeyword, sheetFilter, 0, PAGE_SIZE);
-      const items = sortBySheetSequence(data?.items || []);
+      const items = data?.items || [];   // BE đã sort sẵn
       setRows(items); setPage(0); setHasMore(!!data?.hasMore);
     } catch (e) {
       setRows([]); showToast('error', e.message || 'Lỗi tải dữ liệu');
@@ -273,7 +259,7 @@ export default function UploadPage() {
       const next = page + 1;
       const data = await managementSearchPaged(debouncedKeyword, sheetFilter, next, PAGE_SIZE);
       const items = data?.items || [];
-      setRows(prev => sortBySheetSequence([...prev, ...items])); // sort lại toàn bộ
+      setRows(prev => [...prev, ...items]);   // BE đã sort sẵn, không cần sort lại
       setPage(next); setHasMore(!!data?.hasMore);
     } catch (e) {
       showToast('error', e.message || 'Lỗi tải thêm dữ liệu');
